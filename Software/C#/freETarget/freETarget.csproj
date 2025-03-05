@@ -137,6 +137,8 @@
     <Compile Include="targets\AirRifle.cs" />
     <Compile Include="targets\aTarget.cs" />
     <Compile Include="targets\BB_NRA.cs" />
+    <Compile Include="targets\DGI15AirRifle_M96.cs" />
+    <Compile Include="targets\DGI15LR_M84.cs" />
     <Compile Include="targets\NRA_B19.cs" />
     <Compile Include="targets\NRA_B3.cs" />
     <Compile Include="targets\NRA_B38.cs" />
