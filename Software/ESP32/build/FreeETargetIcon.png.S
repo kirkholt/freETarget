@@ -1,15 +1,15 @@
-/* * Data converted from C:/Users/allan/Documents/freETarget/Software/ESP32/main/HTML/FreeETarget.png
+/* * Data converted from C:/Users/allan/Documents/freETarget/Software/ESP32/main/HTML/FreeETargetIcon.png
  */
 .data
 #if !defined (__APPLE__) && !defined (__linux__)
 .section .rodata.embedded
 #endif
 
-.global FreeETarget_png
-FreeETarget_png:
+.global FreeETargetIcon_png
+FreeETargetIcon_png:
 
-.global _binary_FreeETarget_png_start
-_binary_FreeETarget_png_start: /* for objcopy compatibility */
+.global _binary_FreeETargetIcon_png_start
+_binary_FreeETargetIcon_png_start: /* for objcopy compatibility */
 .byte 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52
 .byte 0x00, 0x00, 0x04, 0xe1, 0x00, 0x00, 0x05, 0xe5, 0x08, 0x06, 0x00, 0x00, 0x00, 0x47, 0xc3, 0xcc
 .byte 0x49, 0x00, 0x00, 0x00, 0x04, 0x67, 0x41, 0x4d, 0x41, 0x00, 0x00, 0xb1, 0x8f, 0x0b, 0xfc, 0x61
@@ -6965,10 +6965,10 @@ _binary_FreeETarget_png_start: /* for objcopy compatibility */
 .byte 0x0f, 0x3d, 0x8f, 0x06, 0x51, 0x14, 0xfc, 0x72, 0xd4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e
 .byte 0x44, 0xae, 0x42, 0x60, 0x82
 
-.global _binary_FreeETarget_png_end
-_binary_FreeETarget_png_end: /* for objcopy compatibility */
+.global _binary_FreeETargetIcon_png_end
+_binary_FreeETargetIcon_png_end: /* for objcopy compatibility */
 
 
-.global FreeETarget_png_length
-FreeETarget_png_length:
+.global FreeETargetIcon_png_length
+FreeETargetIcon_png_length:
 .long 111253

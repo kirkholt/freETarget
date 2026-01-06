@@ -1507,6 +1507,7 @@ namespace freETarget {
                 commModule.close();
                 this.reconnectTimer.Enabled = false;
                 this.rapidFireTimer.Stop();
+                commModule = null;
             } catch (IOException) {
                 MessageBox.Show("Error closing the serial port. Please try again.", "Error disconnecting", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
@@ -1635,6 +1636,8 @@ namespace freETarget {
         private void btnUpload_Click(object sender, EventArgs e) {
             frmUpload upload = new frmUpload(this);
             upload.ShowDialog();
+            upload.Dispose();
+            upload = null;
         }
 
         private void loadEventsOnTabs() {
