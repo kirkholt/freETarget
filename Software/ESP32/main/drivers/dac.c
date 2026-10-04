@@ -49,13 +49,13 @@
 /*
  * Function Prototypes
  */
-static void DAC_write_MCP4728(double volts[]); // What value are we setting it to
-static void DAC_write_MCP4725(double volts[]); // What value are we setting it to
+static void DAC_write_MCP4728(real_t volts[]); // What value are we setting it to
+static void DAC_write_MCP4725(real_t volts[]); // What value are we setting it to
 
 /*
  * Variables
  */
-static double vref_adjust = 0.0; // Adjustment to apply to DAC
+static real_t vref_adjust = 0.0; // Adjustment to apply to DAC
 
 /*----------------------------------------------------------------
  *
@@ -68,9 +68,9 @@ static double vref_adjust = 0.0; // Adjustment to apply to DAC
  *----------------------------------------------------------------
  *
  *--------------------------------------------------------------*/
-void DAC_write(double volts[]) // What value are we setting it to
+void DAC_write(real_t volts[]) // What value are we setting it to
 {
-  if ( MCP4728 & board_mask )
+  if ( MCP4728 )
   {
     DAC_write_MCP4728(volts);  // MCP 4728 (four channel`)
   }
@@ -112,14 +112,14 @@ void DAC_write(double volts[]) // What value are we setting it to
  *    Not used
  *
  *--------------------------------------------------------------*/
-static void DAC_write_MCP4728(double volts[]) // What value are we setting it to
+static void DAC_write_MCP4728(real_t volts[]) // What value are we setting it to
 {
   unsigned char data[3 * 4];                  // Bytes to send to the I2C
   unsigned int  scaled_value;                 // Value (12 bits) to the DAC
   int           i;
-  float         max;
+  real_t        max;
   int           v_source = V_INTERNAL;        // Default to internal reference
-  float         v_ref    = VREF_INT;          // Default to 2.048 volts
+  real_t        v_ref    = VREF_INT;          // Default to 2.048 volts
 
   /*
    *  Step 1, figure out what VREF should be
@@ -129,7 +129,7 @@ static void DAC_write_MCP4728(double volts[]) // What value are we setting it to
   {
     if ( volts[i] > VREF_EXT )
     {
-      DLT(DLT_INFO, SEND(ALL, sprintf(_xs, "VREF %d out of range:%4.2f)", i, volts[i]);))
+      DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "VREF %d out of range:%4.2f)", i, volts[i]);))
       volts[i] = VREF_EXT - 0.5;
     }
     if ( volts[i] > max )
@@ -148,7 +148,7 @@ static void DAC_write_MCP4728(double volts[]) // What value are we setting it to
     v_source = V_EXTERNAL; // Otherwise
     v_ref    = VREF_EXT;   // Default to 5.0 volts
   }
-  DLT(DLT_DIAG, SEND(ALL, sprintf(_xs, "DAC v_source:%d  v_ref:%4.2f)", v_source, v_ref);))
+  DLT(DLT_DIAG, SEND(CONSOLE, sprintf(_xs, "DAC v_source:%d  v_ref:%4.2f)", v_source, v_ref);))
 
   /*
    *  Fill up the I2C buffer
@@ -156,7 +156,7 @@ static void DAC_write_MCP4728(double volts[]) // What value are we setting it to
   for ( i = 0; i != 4; i++ )
   {
     scaled_value = ((int)(volts[i] / v_ref * DAC_FS)) & 0xfff; // Figure the bits to send
-    DLT(DLT_DIAG, SEND(ALL, sprintf(_xs, "DAC_write(channel:%d Volts:%4.2f scale:%d)", i + 1, volts[i], scaled_value);))
+    DLT(DLT_DIAG, SEND(CONSOLE, sprintf(_xs, "DAC_write(channel:%d Volts:%4.2f scale:%d)", i + 1, volts[i], scaled_value);))
     data[(i * 3) + 0] = DAC_MCP4728_WRITE                      // Write
                         + ((i & 0x3) << 1)                     // Channel
                         + 1;                                   // UDAC = 1  update automatically
@@ -191,14 +191,14 @@ static void DAC_write_MCP4728(double volts[]) // What value are we setting it to
  *
  *--------------------------------------------------------------*/
 
-static void DAC_write_MCP4725(double volts[]) // What value are we setting it to
+static void DAC_write_MCP4725(real_t volts[]) // What value are we setting it to
 {
   unsigned char data[3];                      // Bytes to send to the I2C
   unsigned int  scaled_value;                 // Value (12 bits) to the DAC
 
   if ( volts[0] > VREF_MCP4725 )
   {
-    DLT(DLT_INFO, SEND(ALL, sprintf(_xs, "VREF out of range:%4.2f)", volts[0]);))
+    DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "VREF out of range:%4.2f)", volts[0]);))
     volts[0] = VREF_MCP4725 - 0.25;
   }
 
@@ -237,7 +237,7 @@ void DAC_read(void)          // What value are we setting it to
 
   SEND(ALL, sprintf(_xs, "DAC_read: ");)
 
-  if ( MCP4728 & board_mask )
+  if ( MCP4728 )
   {
     sizeof_data = sizeof(data);                     // MCP4728 (4 channel`)
     i2c_read(DAC_MCP4728_ADDR, data, sizeof(data)); // Data transferred on last bit.
@@ -289,11 +289,11 @@ void DAC_read(void)          // What value are we setting it to
 
 void DAC_calibrate(void) // Desired setpoint voltage
 {
-  double volts[4];
+  real_t volts[4];
   int    i;
-  double v_measure = 0.0;
+  real_t v_measure = 0.0;
 
-  if ( TMP1075D & board_mask )
+  if ( TMP1075D )
   {
     volts[VREF_LO] = json_vref_lo;
     volts[VREF_HI] = 0;
@@ -308,8 +308,8 @@ void DAC_calibrate(void) // Desired setpoint voltage
         break;
       }
       DAC_write_MCP4725(&volts[VREF_LO]);
-      DLT(DLT_DIAG, SEND(ALL, sprintf(_xs, "%d vref:%f  DAC:%f vref_measure:%f  vref_adjust:%f ", i, json_vref_lo,
-                                      json_vref_lo + vref_adjust, v_measure, vref_adjust);))
+      DLT(DLT_DIAG, SEND(CONSOLE, sprintf(_xs, "vref:%f  DAC:%f vref_measure:%f  vref_adjust:%f ", json_vref_lo, json_vref_lo + vref_adjust,
+                                          v_measure, vref_adjust);))
       vTaskDelay(ONE_SECOND / 25);
       i--;
       if ( i == 0 )
@@ -317,18 +317,18 @@ void DAC_calibrate(void) // Desired setpoint voltage
         break;
       }
     }
-    DLT(DLT_DIAG, SEND(ALL, sprintf(_xs, "vref:%f   vref_measure:%f ", json_vref_lo, v_measure);))
+    DLT(DLT_DIAG, SEND(CONSOLE, sprintf(_xs, "vref:%f   vref_measure:%f ", json_vref_lo, v_measure);))
   }
   else
   {
-    DLT(DLT_DIAG, SEND(ALL, sprintf(_xs, "Vref feedback not available on this board ");))
+    DLT(DLT_DIAG, SEND(CONSOLE, sprintf(_xs, "Vref feedback not available on this board ");))
   }
 
   /*
    *  All done, return
    */
 
-  DLT(DLT_DIAG, SEND(ALL, sprintf(_xs, "vref:%f   vref_measure:%f ", json_vref_lo, v_measure);))
+  DLT(DLT_DIAG, SEND(CONSOLE, sprintf(_xs, "vref:%f   vref_measure:%f ", json_vref_lo, v_measure);))
   return;
 }
 
@@ -358,11 +358,11 @@ void DAC_calibrate(void) // Desired setpoint voltage
  ***************************************************************************/
 void DAC_test(void)
 {
-  double volts[4];
+  real_t volts[4];
   int    i;
 
   SEND(ALL, sprintf(_xs, "\r\nDAC 0 Up ramp 0-5V");)
-  if ( MCP4728 & board_mask )
+  if ( MCP4728 )
   {
     SEND(ALL, sprintf(_xs, "\r\nDAC 1 Up ramp 0-5V delayed");)
   }
@@ -380,20 +380,20 @@ void DAC_test(void)
         break;
       }
     }
-    if ( MCP4728 & board_mask )
+    if ( MCP4728 )
     {
-      volts[VREF_LO] = VREF_EXT * ((float)(i % 200) / 200.0);        // Ramp Up
-      volts[VREF_HI] = VREF_EXT * ((float)((i - 10) % 200) / 200.0); // Ramp Up delayed
+      volts[VREF_LO] = VREF_EXT * ((real_t)(i % 200) / 200.0);        // Ramp Up
+      volts[VREF_HI] = VREF_EXT * ((real_t)((i - 10) % 200) / 200.0); // Ramp Up delayed
       volts[VREF_2]  = 0.0;
       volts[VREF_3]  = 0.0;
     }
     else
     {
-      volts[VREF_LO] = VREF_EXT * ((float)(i % 200) / 200.0);        // Ramp Up
+      volts[VREF_LO] = VREF_EXT * ((real_t)(i % 200) / 200.0);        // Ramp Up
     }
 
     DAC_write(volts);
-    vTaskDelay(TICK_10ms * 100);                                     // Wait 100ms
+    vTaskDelay(TICK_10ms * 100);                                      // Wait 100ms
 
     i++;
   }

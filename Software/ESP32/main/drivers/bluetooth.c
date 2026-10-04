@@ -64,7 +64,7 @@ void BlueTooth_configuration(void)
    */
   if ( json_aux_mode == 0 )
   {
-    SEND(SOME, sprintf(_xs, "\r\nAUX port not enabled.  Use {\"AUX_MODE\": 2} to enable");)
+    SEND(SOME, sprintf(_xs, "\r\nAUX port not enabled.  Use {\"AUX_MODE\": 3} to enable");)
     SEND(SOME, sprintf(_xs, _DONE_);)
     return;
   }
@@ -74,7 +74,6 @@ void BlueTooth_configuration(void)
   /*
    * Set the baud rate to the correct value and program
    */
-
   serial_bt_config(9600);
   vTaskDelay(TICK_10ms); // Wait for the port to settle
   send_AT();
@@ -91,7 +90,7 @@ void BlueTooth_configuration(void)
    * Mark that the module is ready
    */
   json_aux_mode = BLUETOOTH;
-  nonvol_write_i32(NONVOL_AUX_PORT_ENABLE, json_aux_mode); // Remember that BT is enabled
+  nonvol_write_i32(NONVOL_AUX_PORT_ENABLE, &json_aux_mode); // Remember that BT is enabled
 
   /*
    *  Programmed

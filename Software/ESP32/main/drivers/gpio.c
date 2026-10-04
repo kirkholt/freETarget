@@ -28,7 +28,7 @@
 #include "dac.h"
 #include "analog_io.h"
 #include "pwm.h"
-
+#include "serial_io.h"
 #include "../managed_components/espressif__led_strip/src/led_strip_rmt_encoder.h"
 
 /*
@@ -256,8 +256,8 @@ void status_LED_init(unsigned int led_gpio    // What GPIO is used for output
  *-----------------------------------------------------*/
 #define LED_ON       0x3F                     // Max full scale is 0xff (too bright)
 #define N_SERIAL_LED 3
-#define CEE          3                        // LED C takes the fourth position
-#define DEE          4                        // LED D takes the fifth position
+#define CEE          N_SERIAL_LED             // LED C takes the fourth position
+#define DEE          (CEE + 1)                // LED D takes the fifth position
 
 rmt_transmit_config_t tx_config = {
     .loop_count = 0,                          // no transfer loop
@@ -270,7 +270,7 @@ static unsigned char LED_D = ' ';             // Rapid fire LED D
 void set_status_LED(char new_state[]          // New LED colours
 )
 {
-  static char *old_state = "   ";
+  static char *old_state = ".....";
   int          i;
 
   if ( new_state == old_state )               // Dont't do anything if the state is the same
@@ -302,8 +302,8 @@ void set_status_LED(char new_state[]          // New LED colours
         case 'y':              // YELLOW LED
           status[i].blink = 1; // Turn on Blinking
         case 'Y':
-          status[i].red   = LED_ON / 2;
-          status[i].green = LED_ON / 2;
+          status[i].red   = LED_ON / 3;
+          status[i].green = LED_ON / 3;
           break;
 
         case 'g':              // GREEN LED
@@ -408,19 +408,15 @@ void commit_status_LEDs(unsigned int blink_state)
   {
     default:
     case ' ':
-      rapid_green(0);
-      break;
-    case 'g':
-      rapid_green(blink_state);
-      break;
-    case 'G':
-      rapid_green(1);
+      rapid_C_LED(0);
       break;
     case 'r':
-      rapid_red(blink_state);
+    case 'c':
+      rapid_C_LED(blink_state);
       break;
     case 'R':
-      rapid_red(1);
+    case 'C':
+      rapid_C_LED(1);
       break;
   }
 
@@ -428,19 +424,15 @@ void commit_status_LEDs(unsigned int blink_state)
   {
     default:
     case ' ':
-      rapid_red(0);
+      rapid_D_LED(0);
       break;
     case 'g':
-      rapid_green(blink_state);
+    case 'd':
+      rapid_D_LED(blink_state);
       break;
     case 'G':
-      rapid_green(1);
-      break;
-    case 'r':
-      rapid_red(blink_state);
-      break;
-    case 'R':
-      rapid_red(1);
+    case 'D':
+      rapid_D_LED(1);
       break;
   }
 
@@ -490,7 +482,7 @@ void commit_status_LEDs(unsigned int blink_state)
 void read_timers(int timer[])
 {
   unsigned int i;
-  double       pcnt_hi; // Reading from high counter
+  real_t       pcnt_hi; // Reading from high counter
 
   for ( i = 0; i != 8; i++ )
   {
@@ -569,11 +561,10 @@ void paper_start(void)
   /*
    *  DC Motor, turn on the FET to start the motor
    */
-  if ( IS_DC_WITNESS )    // DC motor,
+  if ( IS_DC_WITNESS ) // DC motor,
   {
-    DLT(DLT_DEBUG, SEND(ALL, sprintf(_xs, "DC motor start: %d ms", json_paper_time);))
+    DLT(DLT_DEBUG, SEND(CONSOLE, sprintf(_xs, "DC motor start: %d ms", json_paper_time);))
     DCmotor_on_off(true, json_paper_time);
-    motor_running = true; // Used for diagnostics
   }
 
   /*
@@ -615,14 +606,17 @@ void paper_drive_tick(void)
    */
   if ( IS_DC_WITNESS )
   {
-    if ( paper_time <= 0 )
+    if ( motor_running )
+    {
+      DLT(DLT_DEBUG, SEND(CONSOLE, sprintf(_xs, "paper_time: %ld", paper_time);))
+    }
+    if ( paper_time <= 0 ) // Ran out of time, stop the motor
     {
       if ( motor_running == true )
       {
-        motor_running = false;
-        DLT(DLT_DEBUG, SEND(ALL, sprintf(_xs, "DC motor stopped");))
+        DLT(DLT_DEBUG, SEND(CONSOLE, sprintf(_xs, "DC motor stopped");))
+        paper_stop();      // Motor OFF
       }
-      paper_stop(); // Motor OFF
     }
   }
 
@@ -672,7 +666,6 @@ void paper_stop(void)
   if ( IS_DC_WITNESS )        // DC motor - Turn the output on once
   {
     DCmotor_on_off(false, 0); // Motor OFF
-    ft_timer_delete(&paper_time);
   }
 
   if ( IS_STEPPER_WITNESS )   // Stepper motor - Toggle the output
@@ -682,7 +675,6 @@ void paper_stop(void)
     {
       gpio_set_level(HOLD_D_GPIO, STEP_DISABLE);
     }
-    ft_timer_delete(&paper_time);
   }
 
   /*
@@ -720,13 +712,17 @@ void DCmotor_on_off(bool         on,      // on == true, turn on motor drive
 
   if ( on == true )
   {
-    gpio_set_level(PAPER, PAPER_ON);  // Turn it on
-    ft_timer_new(&paper_time, MS_TO_TICKS(duration));
+    gpio_set_level(PAPER, PAPER_ON); // Turn it on
+    ft_timer_new(&paper_time, MS_TO_TICKS(duration), NULL, "paper_time");
+    motor_running = true;
   }
   else
   {
-    gpio_set_level(PAPER, PAPER_OFF); // Turn it off
-    ft_timer_delete(&paper_time);
+    if ( motor_running == true )
+    {
+      gpio_set_level(PAPER, PAPER_OFF); // Turn it off
+      motor_running = false;
+    }
   }
 
   /*
@@ -737,7 +733,7 @@ void DCmotor_on_off(bool         on,      // on == true, turn on motor drive
 
 int is_paper_on(void) // Return true if there is still time
 {
-  return (paper_time != 0);
+  return (paper_time > 0);
 }
 
 /*----------------------------------------------------------------
@@ -769,8 +765,8 @@ void stepper_pulse(void)
     step_time = json_step_time;
   }
 
-  DLT(DLT_DIAG, SEND(ALL, sprintf(_xs, "step_time %d   step_count: %d", step_time, step_count);))
-  ft_timer_new(&paper_time, MS_TO_TICKS(step_time));
+  DLT(DLT_DIAG, SEND(CONSOLE, sprintf(_xs, "step_time %d   step_count: %d", step_time, step_count);))
+  ft_timer_new(&paper_time, MS_TO_TICKS(step_time), NULL, "step_time");
 
   if ( step_count != 0 )
   {
@@ -802,15 +798,29 @@ void stepper_pulse(void)
  * on the front face.
  *
  *-----------------------------------------------------*/
-void face_ISR(void)
+IRAM_ATTR void face_strike_ISR(void)
 {
   face_strike++; // Got a face strike
-
-  DLT(DLT_INFO, SEND(ALL, sprintf(_xs, "\r\nface_ISR(): %d", face_strike);))
 
   return;
 }
 
+void enable_face_strike_interrupt(void)
+{
+  if ( (FACE_HALF_GPIO & board_mask) // The hardware supports it?
+       && (json_face_strike != 0) )  // Is the face strike sensor enabled?
+  {
+    gpio_intr_enable(FACE_SENSOR);   // Turn on the interrupts
+  }
+
+  return;
+}
+
+void disable_face_strike_interrupt(void)
+{
+  gpio_intr_disable(FACE_SENSOR); // Turn off the interrupts
+  return;
+}
 /*----------------------------------------------------------------
  *
  * @function: aquire()
@@ -836,25 +846,30 @@ void aquire(void)
   /*
    * Pull in the data amd save it in the record array
    */
-  read_timers(&record[shot_in].timer_count[0]);                 // Record this count
-  IF_IN(IN_SHOT)                                                // Only record the shot if we are actually expecting a shot
+  read_timers(&record[shot_in].timer_count[0]);  // Record this count
+  record[shot_in].shot_time     = run_time_ms(); // Capture the time into the shot
+  record[shot_in].face_strike   = face_strike;   // Record if it's a face strike
+  record[shot_in].sensor_status = is_running();  // Record the sensor status
+
+  IF_IN(IN_SHOT)                                 // Only record the shot if we are actually expecting a shot
   {
-    record[shot_in].shot_time     = run_time_ms() - shot_start; // Capture the time into the shot
-    record[shot_in].face_strike   = face_strike;                // Record if it's a face strike
-    record[shot_in].sensor_status = is_running();               // Record the sensor status
-    shot_in                       = (shot_in + 1) % SHOT_SPACE; // Prepare for the next shot
+    record[shot_in].miss = 0;                    // Show as a valid shot
   }
+
+  shot_in = (shot_in + 1) % SHOT_SPACE;          // Prepare for the next shot
 
   /*
    * All done for now
    */
+  run_state |= IN_AQUIRE; // Show that we have aquired the data
+
   return;
 }
 
 /*----------------------------------------------------------------
  *
- * @function: rapid_red()
- *           rapid_green()
+ * @function: rapid_C_LED()
+ *            rapid_D_LED()
  *
  * @brief: Set the RED and GREEN lights
  *
@@ -871,41 +886,42 @@ void aquire(void)
  *
  *--------------------------------------------------------------*/
 
-void rapid_red(unsigned int state        // New state for the RED light
-)
+void rapid_C_LED(unsigned int state) // New state for the RED light
 {
+  static int old_state = 99;
+
+  if ( old_state == state )
+  {
+    return;
+  }
+  old_state = state;
+
   if ( json_mfs_select_cd == RAPID_LOW ) // Inverted drive
   {
     state = !state;
   }
-  if ( IS_HOLD_C(RAPID_RED) )
-  {
-    gpio_set_level(DIP_C, state);
-  }
-  if ( IS_HOLD_D(RAPID_RED) )
-  {
-    gpio_set_level(DIP_D, state);
-  }
+
+  gpio_set_level(DIP_C, state);
 
   return;
 }
 
-void rapid_green(unsigned int state      // New state for the GREEN light
-)
+void rapid_D_LED(unsigned int state) // New state for the GREEN light
 {
+  static int old_state = 99;
+
+  if ( old_state == state )
+  {
+    return;
+  }
+  old_state = state;
+
   if ( json_mfs_select_cd == RAPID_LOW ) // Inverted drive
   {
     state = !state;
   }
 
-  if ( IS_HOLD_C(RAPID_GREEN) )
-  {
-    gpio_set_level(DIP_C, state);
-  }
-  if ( IS_HOLD_D(RAPID_GREEN) )
-  {
-    gpio_set_level(DIP_D, state);
-  }
+  gpio_set_level(DIP_D, state);
 
   return;
 }
@@ -975,27 +991,66 @@ void digital_test(void)
  *----------------------------------------------------------------
  *
  *--------------------------------------------------------------*/
+typedef struct
+{
+  char *status; // Whar LEDs to drive
+  char *prompt; // Test Prompt
+} status_LED_test_t;
+
+static const status_LED_test_t status_LED_list[] = {
+    {"G    ", "RDY Green"                            },
+    {" G   ", "Comm Green"                           },
+    {"  G  ", "12V Green"                            },
+    {"   R ", "Rapid Red"                            },
+    {"    G", "Rapid Green"                          },
+    {"RRRRG", "All On"                               },
+    {"BBBRG", "Blue, Blue, Blue, Red, Green"         },
+    {"WWWR ", "White, White, White, Red"             },
+    {"WWW G", "White, White, White, Green"           },
+    {"RGBRG", "Red, Green, Blue, Red, Green"         },
+    {"rgbrg", "Blinking Red, Green, Blue, Red, Green"},
+    {"     ", "Dark"                                 },
+    {0,       0                                      }
+};
+
 void status_LED_test(void)
 {
-  if ( ((IS_HOLD_C(RAPID_RED)) && (IS_HOLD_C(RAPID_GREEN))) || ((IS_HOLD_D(RAPID_RED)) && (IS_HOLD_D(RAPID_GREEN))) )
+  int  i;
+  char ch;
+
+  if ( ((IS_HOLD_C(rapid_C_LED)) && (IS_HOLD_C(rapid_D_LED))) || ((IS_HOLD_D(rapid_C_LED)) && (IS_HOLD_D(rapid_D_LED))) )
   {
     SEND(ALL, sprintf(_xs, "\r\nMFS_C or MFS_D not configured for output\r\n");)
   }
 
-  vTaskDelay(2 * ONE_SECOND);
-  set_status_LED("RRRRR");
-  vTaskDelay(2 * ONE_SECOND);
-  set_status_LED("GGGGG");
-  vTaskDelay(ONE_SECOND);
-  set_status_LED("BBBRG");
-  vTaskDelay(ONE_SECOND);
-  set_status_LED("WWWGR");
-  vTaskDelay(ONE_SECOND);
-  set_status_LED("RGBRG");
-  vTaskDelay(ONE_SECOND);
-  set_status_LED("rgbrg");
-  vTaskDelay(5 * ONE_SECOND); // Blink for 5 seconds
-  set_status_LED(LED_READY);
+  SEND(ALL, sprintf(_xs, "\r\nSend * to advance test, ! to exit, R to restart\r\n");)
+  serial_getch(ALL); // Clear the input
+
+  i = 0;
+  while ( status_LED_list[i].status != 0 )
+  {
+    SEND(ALL, sprintf(_xs, "\r\n%s: %s", status_LED_list[i].status, status_LED_list[i].prompt);)
+    set_status_LED(status_LED_list[i].status);
+    while ( serial_available(ALL) == 0 )
+    {
+      vTaskDelay(ONE_SECOND / 10);
+    }
+    ch = serial_getch(ALL);
+    switch ( ch )
+    {
+      case 'R':
+        i = 0;  // Start over if the user sends an R
+        break;
+
+      case '!': // Exit if the user sends a !
+        SEND(ALL, sprintf(_xs, _DONE_);)
+        return;
+
+      default:
+        i++;    // Advance to the next test
+        break;
+    }
+  }
   SEND(ALL, sprintf(_xs, _DONE_);)
   return;
 }
@@ -1025,7 +1080,7 @@ void paper_test(void)
    */
   if ( check_12V() == false )
   {
-    SEND(ALL, sprintf(_xs, "\r\nTest failed, no 12V supply");)
+    SEND(ALL, sprintf(_xs, "\r\nTest failed, no 12V supply\r\n");)
     return;
   }
 

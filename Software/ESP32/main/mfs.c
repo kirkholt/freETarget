@@ -21,6 +21,7 @@
 #include "timer.h"
 #include "mfs.h"
 #include "ota.h"
+#include "helpers.h"
 
 /*
  *  Definitions
@@ -41,50 +42,35 @@
 
 static void sw_state(unsigned int action); // Carry out the MFS function
 static void mfs_on(void);                  // Functions to carry out mfs actions.
-static void mfs_paper_feed(void);
-static void mfs_paper_shot(void);
+static void mfs_paper_feed(void);          // Continiously feed paper until the switch is released
+static void mfs_paper_shot(void);          // Feed paper the distance of one shot
 static void mfs_off(void);
-static void mfs_led_adjust(void);
+static void mfs_led_adjust(void);          // Adjust the LED brightness
 static void mfs_pc_test(void);
 
 /*
  * Variables
  */
-static unsigned int switch_state;                // What switches are pressed
+static unsigned int switch_state;                     // What switches are pressed
 const mfs_action_t  mfs_action[] = {
-    {TARGET_ON,      mfs_on,         "TARGET_ON"     }, // Take the target out of sleep
-    {PAPER_FEED,     mfs_paper_feed, "PAPER FEED"    }, // Feed paper until button released
-    {LED_ADJUST,     mfs_led_adjust, "LED_ADJUST"    }, // Adjust LED brighness
-    {PAPER_SHOT,     mfs_paper_shot, "PAPER SHOT"    }, // Advance paper the distance of one shot
-    {PC_TEST,        mfs_pc_test,    "PC TEST"       }, // Send a test shot to the PC
-    {TARGET_OFF,     mfs_off,        "TARGET OFF"    }, // Turn the target on or off
-    {NO_ACTION,      NULL,           "NO ACTION"     }, // No action on C & D inputs
-    {TARGET_TYPE,    NULL,           "TARGET TYPE"   }, // Put the target type into the send score
-    {SHOOTER_LEVEL,  NULL,           "SHOOTER_LEVEL" }, // Shooter experiance level
-    {RAPID_RED,      NULL,           "RAPID RED"     }, // The output is used to drive the RED rapid fire LED
-    {RAPID_GREEN,    NULL,           "RAPID_GREEN"   }, // The output is used to drive the GREEN rapid fire LED
-    {RAPID_LOW,      NULL,           "RAPID LOW"     }, // The output is active low
-    {RAPID_HIGH,     NULL,           "RAPID HIGH"    }, // The output is active high
-    {STEPPER_DRIVE,  NULL,           "STEPPER_DRIVE" }, // The output is used to drive stepper motor
-    {STEPPER_ENABLE, NULL,           "STEPPER_ENABLE"}, // The output is used to drive stepper motor enable
-    {0,              0,              0               }
+    {TARGET_ON,      mfs_on,                    "TARGET_ON"     }, // Take the target out of sleep
+    {PAPER_FEED,     mfs_paper_feed,            "PAPER FEED"    }, // Feed paper until button released
+    {LED_ADJUST,     mfs_led_adjust,            "LED_ADJUST"    }, // Adjust LED brighness
+    {PAPER_SHOT,     mfs_paper_shot,            "PAPER SHOT"    }, // Advance paper the distance of one shot
+    {PC_TEST,        mfs_test_build_json_score, "PC TEST"       }, // Send a test shot to the PC
+    {TARGET_OFF,     mfs_off,                   "TARGET OFF"    }, // Turn the target on or off
+    {NO_ACTION,      NULL,                      "NO ACTION"     }, // No action on C & D inputs
+    {TARGET_TYPE,    NULL,                      "TARGET TYPE"   }, // Put the target type into the send score
+    {SHOOTER_LEVEL,  NULL,                      "SHOOTER_LEVEL" }, // Shooter experiance level
+    {MFS_C_LED,      NULL,                      "RAPID RED"     }, // The output is used to drive the RED rapid fire LED
+    {MFS_D_LED,      NULL,                      "RAPID GREEN"   }, // The output is used to drive the GREEN rapid fire LED
+    {RAPID_LOW,      NULL,                      "RAPID LOW"     }, // The output is active low
+    {RAPID_HIGH,     NULL,                      "RAPID HIGH"    }, // The output is active high
+    {STEPPER_DRIVE,  NULL,                      "STEPPER_DRIVE" }, // The output is used to drive stepper motor
+    {STEPPER_ENABLE, NULL,                      "STEPPER_ENABLE"}, // The output is used to drive stepper motor enable
+    {RS485_SELECT,   NULL,                      "RS488 SELECT"  }, // The output is used to select RS488 direction
+    {0,              0,                         0               }
 };
-
-/*
- * Test Vectors
-  {"MFS_HOLD_12":2, "MFS_TAP_2": 0, "MFS_TAP_1":3 , "MFS_HOLD_2": 5, "MFS_HOLD_1":1, "MFS_HOLD_D":9, "MFS_HOLD_C":9, "MFS_SELECT_CD":9,
- "ECHO":0}
-  {"MFS_HOLD_12":2}
-  {"MFS_TAP_2":0}
-  {"MFS_TAP_1":4}
-  {"MFS_HOLD_2":5}
-  {"MFS_HOLD_1":1}
-  {"MFS_HOLD_D":9}
-  {"MFS_HOLD_C":9}
-  {"MFS_SELECT_CD":9}
-  {"ECHO":0}
-
-*/
 
 /*-----------------------------------------------------
  *
@@ -106,43 +92,40 @@ const mfs_action_t  mfs_action[] = {
 void multifunction_init(void)
 {
 
-  DLT(DLT_INFO, SEND(ALL, sprintf(_xs, "Multifunction_init()");))
+  DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "Multifunction_init()");))
 
   /*
    * Check to see if the DIP switch has been overwritten
    */
-  if ( json_mfs_hold_c >= RAPID_RED )
+  if ( json_mfs_hold_c >= MFS_C_LED )
   {
     gpio_set_direction(HOLD_C_GPIO, GPIO_MODE_OUTPUT);
     gpio_set_pull_mode(HOLD_C_GPIO, GPIO_PULLUP_PULLDOWN);
     switch ( json_mfs_hold_c )
     {
-      case RAPID_RED:
-        rapid_red(0);
-        break;
-      case RAPID_GREEN:
-        rapid_green(0);
+      case MFS_C_LED:
+        rapid_C_LED(0);
         break;
       case STEPPER_DRIVE:
         gpio_set_level(HOLD_C_GPIO, 0);
         break;
       case STEPPER_ENABLE:
+        gpio_set_level(HOLD_C_GPIO, 0);
+        break;
+      case RS485_CONTROL:
         gpio_set_level(HOLD_C_GPIO, 0);
         break;
     }
   }
 
-  if ( json_mfs_hold_d >= RAPID_RED )
+  if ( json_mfs_hold_d >= MFS_C_LED )
   {
     gpio_set_direction(HOLD_D_GPIO, GPIO_MODE_OUTPUT);
     gpio_set_pull_mode(HOLD_D_GPIO, GPIO_PULLUP_PULLDOWN);
     switch ( json_mfs_hold_d )
     {
-      case RAPID_RED:
-        rapid_red(0);
-        break;
-      case RAPID_GREEN:
-        rapid_green(0);
+      case MFS_D_LED:
+        rapid_D_LED(0);
         break;
       case STEPPER_DRIVE:
         gpio_set_level(HOLD_D_GPIO, 0);
@@ -150,6 +133,8 @@ void multifunction_init(void)
       case STEPPER_ENABLE:
         gpio_set_level(HOLD_D_GPIO, 0);
         break;
+      case RS485_CONTROL:
+        gpio_set_level(HOLD_D_GPIO, 0);
     }
   }
 
@@ -361,7 +346,7 @@ static void sw_state(unsigned int action)
 {
   mfs_action_t *mfs_ptr;
 
-  DLT(DLT_DEBUG, SEND(ALL, sprintf(_xs, "Switch action: %d", action);))
+  DLT(DLT_DEBUG, SEND(CONSOLE, sprintf(_xs, "Switch action: %d", action);))
 
   mfs_ptr = mfs_find(action);
   if ( (mfs_ptr != NULL) && (mfs_ptr->fcn != NULL) )
@@ -387,7 +372,7 @@ static void mfs_on(void)
 
 static void mfs_paper_feed(void)                               // Feed paper so long as the switch is pressed
 {
-  DLT(DLT_DEBUG, SEND(ALL, sprintf(_xs, "mfs_paper_feed()");))
+  DLT(DLT_DEBUG, SEND(CONSOLE, sprintf(_xs, "mfs_paper_feed()");))
 
   /*
    *  Advance paper using the DC motor
@@ -420,7 +405,7 @@ static void mfs_paper_feed(void)                               // Feed paper so 
   /*
    *  End of action
    */
-  DLT(DLT_DEBUG, SEND(ALL, sprintf(_xs, _DONE_);))
+  DLT(DLT_DEBUG, SEND(CONSOLE, sprintf(_xs, _DONE_);))
 
   return;
 }
@@ -437,25 +422,6 @@ static void mfs_paper_shot(void)
     }
   }
   SEND(ALL, sprintf(_xs, "\r\nDone\r\n");)
-  return;
-}
-
-#define SCALE 1200
-static void mfs_pc_test(void)
-{
-  static unsigned int test_shot = 0;
-  int                 temp, sign;
-
-  temp                = esp_random() % (SCALE);
-  sign                = ((esp_random() & 1) == 0) ? 1 : -1;
-  record[test_shot].x = (float)(sign * temp);
-  temp                = esp_random() % (SCALE);
-  sign                = ((esp_random() & 1) == 0) ? 1 : -1;
-  record[test_shot].y = (float)(sign * temp);
-  s_of_sound          = speed_of_sound(temperature_C(), humidity_RH());
-  prepare_score(&record[test_shot], test_shot, NOT_MISSED_SHOT);
-  test_shot++;
-
   return;
 }
 
@@ -478,7 +444,7 @@ static void mfs_led_adjust(void)
     json_LED_PWM = 0;
   }
 
-  DLT(DLT_DEBUG, SEND(ALL, sprintf(_xs, "mfs_led_adjust: %d%%", json_LED_PWM);))
+  DLT(DLT_DEBUG, SEND(CONSOLE, sprintf(_xs, "mfs_led_adjust: %d%%", json_LED_PWM);))
   set_LED_PWM_now(json_LED_PWM); // Set the brightness
   nvs_set_i32(my_handle, NONVOL_LED_PWM, json_LED_PWM);
   nvs_commit(my_handle);
@@ -502,9 +468,7 @@ static void mfs_led_adjust(void)
  * be used.
  *
  *-----------------------------------------------------*/
-
-mfs_action_t *mfs_find(unsigned int action // Switch to be displayed
-)
+mfs_action_t *mfs_find(unsigned int action) // Switch to be displayed
 {
   unsigned int i;
 
@@ -548,5 +512,36 @@ void mfs_show(void)
   }
 
   SEND(ALL, sprintf(_xs, "\r\n");)
+  return;
+}
+
+/*-----------------------------------------------------
+ *
+ * @function: mfs_RS485_control
+ *
+ * @brief:    Control the RS485 direction control pin
+ *
+ * @return:   None
+ *
+ *-----------------------------------------------------
+ *
+ * This is a special case to drive teh RS485 direction
+ * control pin for boards before V6.2
+ *
+ *-----------------------------------------------------*/
+void mfs_RS485_control(bool state) // Direction control state
+{
+  if ( json_mfs_hold_c == RS485_SELECT )
+  {
+    gpio_set_level(HOLD_C_GPIO, state);
+    return;
+  }
+
+  if ( json_mfs_hold_d == RS485_SELECT )
+  {
+    gpio_set_level(HOLD_D_GPIO, state);
+    return;
+  }
+
   return;
 }

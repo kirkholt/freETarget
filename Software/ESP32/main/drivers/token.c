@@ -94,14 +94,14 @@ void token_init(void)
   /*
    * If not in token ring mode or WiFi is present,do nothing
    */
-  if ( json_token == TOKEN_NONE )            // Not in token ring mode
+  if ( json_token == TOKEN_NONE )                                // Not in token ring mode
   {
     return;
   }
 
-  ft_timer_new(&token_tick, 5 * ONE_SECOND); // Token ring watchdog
+  ft_timer_new(&token_tick, 5 * ONE_SECOND, NULL, "token_tick"); // Token ring watchdog
 
-  DLT(DLT_COMMUNICATION, SEND(ALL, sprintf(_xs, "token_init()");))
+  DLT(DLT_COMMUNICATION, SEND(CONSOLE, sprintf(_xs, "token_init()");))
 
   /*
    * Send out the token initializaation request
@@ -221,7 +221,7 @@ void token_poll(void)
       while ( serial_available(AUX) )
       {
         token = serial_getch(AUX);
-        DLT(DLT_COMMUNICATION, SEND(ALL, sprintf(_xs, "Master Rx: 0x%2X  %d", token, token);))
+        DLT(DLT_COMMUNICATION, SEND(CONSOLE, sprintf(_xs, "Master Rx: 0x%2X  %d", token, token);))
 
         if ( token & TOKEN_BYTE )
         {
@@ -229,7 +229,7 @@ void token_poll(void)
           {
             case (TOKEN_ENUM_REQUEST):                                                        // A new device has requested an enum
               serial_putch((char)(TOKEN_BYTE | TOKEN_ENUM | (1 + 1)), ALL);                   // Yes, start the enumeration at 2
-              DLT(DLT_COMMUNICATION, SEND(ALL, sprintf(_xs, "{\"TOKEN_ENUM\":%d }", (int)(token & TOKEN_RING));))
+              DLT(DLT_COMMUNICATION, SEND(CONSOLE, sprintf(_xs, "{\"TOKEN_ENUM\":%d }", (int)(token & TOKEN_RING));))
               break;
 
             case TOKEN_ENUM:                                                                  // An enumeration byte is passing around
@@ -286,7 +286,7 @@ void token_poll(void)
       while ( serial_available(AUX) )
       {
         token = serial_getch(AUX);
-        DLT(DLT_COMMUNICATION, SEND(ALL, sprintf(_xs, "Slave Rx: 0x%02X %d", token, token);))
+        DLT(DLT_COMMUNICATION, SEND(CONSOLE, sprintf(_xs, "Slave Rx: 0x%02X %d", token, token);))
 
         if ( token & TOKEN_BYTE )
         {
@@ -311,7 +311,7 @@ void token_poll(void)
 
             case TOKEN_RELEASE:                                                   // A release is passing around
               whos_ring = TOKEN_UNDEF;                                            // Yes, Release it
-              set_status_LED(LED_READY);                                          // And show it is ready
+              set_status_LED(LED_READY);
               serial_putch(token, AUX);                                           // Pass it along to the master
               break;                                                              //
 
@@ -364,7 +364,7 @@ int token_take(void)
     return 0;
   }
 
-  DLT(DLT_COMMUNICATION, SEND(ALL, sprintf(_xs, "token_take()");))
+  DLT(DLT_COMMUNICATION, SEND(CONSOLE, sprintf(_xs, "token_take()");))
 
   /*
    * Check to see if the token ring is alreay used
@@ -409,7 +409,7 @@ int token_give(void)
     return 0;
   }
 
-  DLT(DLT_COMMUNICATION, SEND(ALL, sprintf(_xs, "token_give()");))
+  DLT(DLT_COMMUNICATION, SEND(CONSOLE, sprintf(_xs, "token_give()");))
 
   /*
    * Check to see if the token ring is alreay used

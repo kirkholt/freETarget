@@ -13,6 +13,7 @@
 #include "ctype.h"
 #include "driver\gpio.h"
 #include "esp_timer.h"
+#include "esp_random.h"
 #include "gpio_types.h"
 #include "serial_io.h"
 #include "stdbool.h"
@@ -38,6 +39,7 @@
 #include "timer.h"
 #include "bluetooth.h"
 #include "ota.h"
+#include "calibrate.h"
 
 extern volatile time_count_t paper_time;
 
@@ -45,6 +47,7 @@ static void show_test_help(void);
 static void test_display_all_scores(void);
 static void test_rapidfire(void);
 static void test_rapidfire(void);
+static void interrupt_face_strike_test(void);
 
 /*
  * Diagnostic typedefs
@@ -56,61 +59,65 @@ typedef struct
 } self_test_t;
 
 static const self_test_t test_list[] = {
-    {"Help",                              &show_test_help          },
-    {"Factory test",                      &factory_test            },
-    {"Sensor test",                       &sensor_test             },
-    {"- Digital",                         0                        },
-    {"Digital inputs",                    &digital_test            },
-    {"Advance paper backer",              &paper_test              },
-    {"LED brightness test",               &LED_test                },
-    {"Status LED driver",                 &status_LED_test         },
-    {"- Analog",                          0                        },
-    {"Analog input test",                 &analog_input_test       },
-    {"Analog input raw",                  &analog_input_raw        },
-    {"DAC test",                          &DAC_test                },
-    {"DAC read",                          &DAC_read                },
-    {"- Timer & PCNT test",               0                        },
-    {"PCNT timers not stopping",          &pcnt_1                  },
-    {"PCNT timers not running",           &pcnt_2                  },
-    {"PCNT timers start - stop together", &pcnt_3                  },
-    {"PCNT Timers cleared",               &pcnt_4                  },
-    {"PCNT test all",                     &pcnt_all                },
-    {"PCNT calibration",                  &pcnt_cal                },
-    {"Sensor POST test",                  &POST_counters           },
-    {"Turn the oscillator on and off",    &timer_cycle_oscillator  },
-    {"Turn the RUN lines on and off",     &timer_run_all           },
-    {"Show the current time",             &show_time               },
-    {"- Communiations Tests",             0                        },
-    {"AUX serial port test",              &serial_port_test        },
-    {"BlueTooth configuration",           &BlueTooth_configuration },
-    {"Test WiFi as a station",            &WiFi_station_init       },
-    {"Enable the WiFi Server",            &WiFi_server_test        },
-    {"Enable the WiFi AP",                &WiFi_AP_init            },
-    {"Loopback WiFi",                     &WiFi_loopback_test      },
-    {"Scan for access points (APs)",      &WiFi_AP_scan_test       },
-    {"WiFi Ping Pong test",               &WiFi_pingpong_test      },
-    {"- HTTP tests",                      0                        },
-    {"DNS Lookup test",                   &http_DNS_test           },
-    {"Send to server test",               &http_send_to_server_test},
-    {"Start web server",                  &http_server_test        },
-    {"OTA partitions",                    &OTA_partitions          },
-    {"OTA load",                          &OTA_load                },
-    {"OTA rollback",                      &OTA_rollback            },
-    {"OTA version",                       &OTA_compare_versions    },
-    {"-Interrupt Tests",                  0                        },
-    {"Polled target test",                &polled_target_test      },
-    {"Interrupt target test",             &interrupt_target_test   },
-    {"- Software tests",                  0                        },
-    {"build_json_score",                  &test_build_json_score   },
-    {"build_fake_shots",                  &test_build_fake_shots   },
-    {"generate_fake_shot",                &generate_fake_shot      },
-    {"display_all_scores",                &test_display_all_scores },
-    {"Rapidfire test",                    &test_rapidfire          },
-    {"Rapidfire test",                    &test_rapidfire          },
-    {"",                                  0                        }
+    {"Help",                              &show_test_help            },
+    {"Factory test",                      &factory_test              },
+    {"Sensor test",                       &sensor_test               },
+    {"- Digital",                         0                          },
+    {"Digital inputs",                    &digital_test              },
+    {"Advance paper backer",              &paper_test                },
+    {"LED brightness test",               &LED_test                  },
+    {"Status LED driver",                 &status_LED_test           },
+    {"- Analog",                          0                          },
+    {"Analog input test",                 &analog_input_test         },
+    {"Analog input raw",                  &analog_input_raw          },
+    {"DAC test",                          &DAC_test                  },
+    {"DAC read",                          &DAC_read                  },
+    {"- Timer & PCNT test",               0                          },
+    {"PCNT timers not stopping",          &pcnt_1                    },
+    {"PCNT timers not running",           &pcnt_2                    },
+    {"PCNT timers start - stop together", &pcnt_3                    },
+    {"PCNT Timers cleared",               &pcnt_4                    },
+    {"PCNT test all",                     &pcnt_all                  },
+    {"PCNT calibration",                  &pcnt_cal                  },
+    {"Sensor POST test",                  &POST_counters             },
+    {"Turn the oscillator on and off",    &timer_cycle_oscillator    },
+    {"Turn the RUN lines on and off",     &timer_run_all             },
+    {"Show the current time",             &show_time                 },
+    {"Show current timers",               &show_timers               },
+    {"- Communiactions Tests",            0                          },
+    {"AUX port loopback test",            &aux_port_loopback_test    },
+    {"BlueTooth configuration",           &BlueTooth_configuration   },
+    {"RSS485 test",                       &RS485_test                },
+    {"Test WiFi as a station",            &WiFi_station_init         },
+    {"Enable the WiFi Server",            &WiFi_server_test          },
+    {"Enable the WiFi AP",                &WiFi_AP_init              },
+    {"Loopback WiFi",                     &WiFi_loopback_test        },
+    {"Scan for access points (APs)",      &WiFi_AP_scan_test         },
+    {"WiFi Ping Pong test",               &WiFi_pingpong_test        },
+    {"- HTTP tests",                      0                          },
+    {"DNS Lookup test",                   &http_DNS_test             },
+    {"Send to server test",               &http_send_to_server_test  },
+    {"Start web server",                  &http_server_test          },
+    {"OTA partitions",                    &OTA_partitions            },
+    {"OTA load",                          &OTA_load                  },
+    {"OTA rollback",                      &OTA_rollback              },
+    {"OTA version",                       &OTA_compare_versions      },
+    {"-Interrupt Tests",                  0                          },
+    {"Polled target test",                &polled_target_test        },
+    {"Interrupt target test",             &interrupt_target_test     },
+    {"Face strike test",                  &interrupt_face_strike_test},
+    {"- Software tests",                  0                          },
+    {"build_json_score",                  &mfs_test_build_json_score }, // Generate a known score message
+    {"build_fake_shots",                  &test_build_fake_shots     }, // Fill up 10 shots with random values
+    {"generate_fake_shot",                &generate_fake_shot        }, // This forces shots into the software
+    {"display_all_scores",                &test_display_all_scores   }, // Send fake JSON scores
+    {"Rapidfire test",                    &test_rapidfire            },
+    {"Calibration test",                  &calibration_test          }, // Generate fake scores and observe the calibration
+    {"",                                  0                          }
 };
 
 const dlt_name_t dlt_names[] = {
+    {DLT_FATAL,         "DLT_FATAL",         'E'}, //  This is a fatal error and the system should not continue.
     {DLT_CRITICAL,      "DLT_CRITICAL",      'E'}, // Prevents target from working
     {DLT_INFO,          "DLT_INFO",          'I'}, // Running information
     {DLT_APPLICATION,   "DLT_APPLICATION",   'A'}, // FreeTarget.c and compute.c logging
@@ -120,7 +127,11 @@ const dlt_name_t dlt_names[] = {
     {DLT_SCORE,         "DLT_SCORE",         'S'}, // Display timing in the score message
     {DLT_HTTP,          "DLT_HTTP",          'H'}, // Log HTTP events
     {DLT_OTA,           "DLT_OTA",           'O'}, // Log HTTP events
+    {DLT_CALIBRATION,   "DLT_CALIBRATION",   'X'}, // Calibration information
+    {DLT_RAPID_FIRE,    "DLT_RAPID_FIRE",    'R'}, // Rapid fire debugging information
+    {DLT_VERBOSE,       "DLT_VERBOSE",       'x'}, // Calibration verbose information
     {DLT_HEARTBEAT,     "DLT_HEARTBEAT",     'T'}, // Heartbeat tick
+    {DLT_AMB,           "DLT_AMB",           'M'}, // Special debug messages
     {0,                 0,                   0  }
 };
 
@@ -252,13 +263,16 @@ static void show_test_help(void)
 #define PASS_MASK    (PASS_RUNNING | PASS_A | PASS_B | PASS_VREF)
 #define PASS_TEST    (PASS_RUNNING | PASS_C)
 
+#define FACTORY_TEST 1 // Execute a full factory test
+#define SENSOR_TEST  0 // Execute a sensor only test
+
 bool factory_test(void)
 {
-  return do_factory_test(1);
+  return do_factory_test(FACTORY_TEST);
 }
 bool sensor_test(void)
 {
-  return do_factory_test(0);
+  return do_factory_test(SENSOR_TEST);
 }
 
 bool do_factory_test(bool test_run)
@@ -270,8 +284,8 @@ bool do_factory_test(bool test_run)
   char   ABCD[] = "DCBA";       // DIP switch order
   int    pass;                  // Pass YES/NO
   bool   passed_once;           // Passed all of the tests at least once
-  double volts[4];
-  float  vmes_lo;
+  real_t volts[4];
+  real_t vmes_lo;
   int    motor_toggle;          // Toggle motor on an off
   int    number_of_sensors = 4; // Number of sensors to test
 
@@ -309,7 +323,7 @@ bool do_factory_test(bool test_run)
   if ( test_run )
   {
     SEND(ALL, sprintf(_xs, "\r\n");)
-    if ( (board_mask & HDC3022) != 0 )
+    if ( (HDC3022 & board_mask) != 0 )
     {
       SEND(ALL, sprintf(_xs, "\r\nHas the tape seal been removed from the humidity sensor?");)
     }
@@ -374,8 +388,16 @@ bool do_factory_test(bool test_run)
         }
       }
     }
+    if ( test_run == SENSOR_TEST )                      // Only do the sensor tests
+    {
+      if ( (pass & running & RUN_MASK) != 0 )           // Clear the test if any sensor is detected
+      {
+        vTaskDelay(ONE_SECOND / 4);
+        arm_timers();
+      }
+    }
 
-    if ( test_run )                                     // Include the extened tests
+    if ( test_run == FACTORY_TEST ) // Include the extened tests
     {
       dip = read_DIP();
       SEND(ALL, sprintf(_xs, "  DIP: ");)
@@ -421,11 +443,11 @@ bool do_factory_test(bool test_run)
         }
       }
 
-      if ( TMP1075D & board_mask )
+      if ( TMP1075D )
       {
         vmes_lo = vref_measure();       // Read the VREF_LO voltage
         SEND(ALL, sprintf(_xs, "  VREF_LO: %4.2fV", vmes_lo);)
-        if ( abs(vmes_lo - json_vref_lo) <= 0.1 )
+        if ( fabs(vmes_lo - json_vref_lo) <= 0.1 )
         {
           SEND(ALL, sprintf(_xs, " ");)
           pass |= PASS_VREF;            // Mark the test as passed
@@ -437,7 +459,7 @@ bool do_factory_test(bool test_run)
         }
       }
       SEND(ALL, sprintf(_xs, "  Temp: %4.2fC", temperature_C());)
-      if ( HDC3022 & board_mask )
+      if ( HDC3022 )
       {
         SEND(ALL, sprintf(_xs, "  Humidity: %4.2f", humidity_RH());)
       }
@@ -495,13 +517,25 @@ bool do_factory_test(bool test_run)
       switch ( ch )
       {
         default:
-        case 'R':                 // Reset the test
+        case 'R':                    // Reset the test
         case 'r':
-          pass = PASS_A | PASS_B; // Reset the pass/fail
+          pass = PASS_A | PASS_B;    // Reset the pass/fail
           arm_timers();
           break;
 
-        case 'X':                 // Exit
+        case 'P':                    // Pause the test
+        case 'p':
+          SEND(ALL, sprintf(_xs, "\r\nTest Paused\r\n");)
+          set_status_LED(LED_PAUSE); // Blink the status LED
+          while ( serial_available(ALL) == 0 )
+          {
+            vTaskDelay(ONE_SECOND);  // Wait to continue
+          }
+          serial_getch(ALL);         // Clear the input
+          arm_timers();
+          break;
+
+        case 'X':                    // Exit
         case 'x':
         case '!':
           DCmotor_on_off(false, 0);
@@ -576,7 +610,7 @@ bool POST_counters(void)
 {
   unsigned int i;                      // Iteration counter
   unsigned int count, toggle, running; // Cycle counter
-  DLT(DLT_INFO, SEND(ALL, sprintf(_xs, "POST_counters()");))
+  DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "POST_counters()");))
 
   /*
    *  Test 1, Make sure we can turn off the reference clock
@@ -595,7 +629,7 @@ bool POST_counters(void)
 
   if ( count != 0 )
   {
-    DLT(DLT_CRITICAL, SEND(ALL, sprintf(_xs, "Reference clock cannot be stopped");))
+    DLT(DLT_CRITICAL, SEND(CONSOLE, sprintf(_xs, "Reference clock cannot be stopped");))
     set_diag_LED(LED_FAIL_CLOCK_STOP, 10);
     run_state |= IN_FATAL_ERR;
   }
@@ -617,7 +651,7 @@ bool POST_counters(void)
 
   if ( count == 0 )
   {
-    DLT(DLT_CRITICAL, SEND(ALL, sprintf(_xs, "Reference clock cannot be started");))
+    DLT(DLT_CRITICAL, SEND(CONSOLE, sprintf(_xs, "Reference clock cannot be started");))
     set_diag_LED(LED_FAIL_CLOCK_START, 10);
     run_state |= IN_FATAL_ERR;
   }
@@ -631,16 +665,17 @@ bool POST_counters(void)
 
   if ( running != 0 )
   {
-    DLT(DLT_CRITICAL, SEND(ALL, sprintf(_xs, "Stuck bit in run latch: ");))
+    DLT(DLT_CRITICAL, SEND(CONSOLE, sprintf(_xs, "Stuck bit in run latch: ");))
     for ( i = N; i <= W; i++ )
     {
       if ( running & s[i].low_sense.run_mask )
       {
-        DLT(DLT_CRITICAL, SEND(ALL, sprintf(_xs, "%c", find_sensor(s[i].low_sense.run_mask)->short_name);))
+        SEND(ALL, sprintf(_xs, "%c", find_sensor(s[i].low_sense.run_mask)->short_name);)
         set_diag_LED(s[i].low_sense.diag_LED, 10);
       }
       if ( running & s[i].high_sense.run_mask )
       {
+        SEND(ALL, sprintf(_xs, "%c", find_sensor(s[i].high_sense.run_mask)->short_name);)
         set_diag_LED(s[i].high_sense.diag_LED, 10);
       }
     }
@@ -658,7 +693,7 @@ bool POST_counters(void)
   gpio_set_level(CLOCK_START, CLOCK_TRIGGER_OFF);
   if ( (is_running() & RUN_MASK) != RUN_MASK )
   {
-    DLT(DLT_CRITICAL, SEND(ALL, sprintf(_xs, "Failed to start clock in run latch: %02X", is_running());))
+    DLT(DLT_CRITICAL, SEND(CONSOLE, sprintf(_xs, "Failed to start clock in run latch: %02X", is_running());))
     set_diag_LED(LED_FAIL_RUN_STUCK, 10);
     run_state |= IN_FATAL_ERR;
   }
@@ -736,7 +771,7 @@ void show_sensor_fault(unsigned int sensor_status)
   {
     if ( (sensor_status & (1 << i)) == 0 )
     {
-      DLT(DLT_DEBUG, SEND(ALL, sprintf(_xs, "Sensor %s failed", find_sensor(1 << i)->long_name);))
+      DLT(DLT_DEBUG, SEND(CONSOLE, sprintf(_xs, "Sensor %s failed", find_sensor(1 << i)->long_name);))
       set_diag_LED(find_sensor(1 << i)->diag_LED, 2);
     }
   }
@@ -785,27 +820,46 @@ bool do_dlt(           //
     return false;                                            // Send out if the trace is higher than the level
   }
 
-                                                             /*
-                                                              *  Loop through and see what trace level has been enabled
-                                                              */
-  i = 0;
-  while ( dlt_names[i].dlt_text != 0 )          // All the DLT levels
+  if ( ((level & DLT_VERBOSE) != 0)                          // This message is Verbose
+       && (is_trace & DLT_VERBOSE) == 0 )                    // but Verbose is not enabled
   {
-    if ( (dlt_names[i].dlt_mask & level) != 0 ) // This level is active
+    return false;                                            // Don't send out the message
+  }
+
+  level = level & ~DLT_VERBOSE;                              // Clear the verbose bit for the rest of the processing
+
+  /*
+   *  Loop through and see what trace level has been enabled
+   */
+  i = 0;
+  while ( dlt_names[i].dlt_text != 0 )            // All the DLT levels
+  {
+    if ( (dlt_names[i].dlt_mask & (level)) != 0 ) // This level is active (with and withoug VERBOSE)
     {
-      dlt_id = dlt_names[i].dlt_id;             // Put the DLT_ID at the start of the message
-      break;
+      dlt_id = dlt_names[i].dlt_id;               // Use the Verbose ID
+
+      SEND(ALL, sprintf(_xs, "\r\n%c (%.3f) ", dlt_id, run_time_ms() / 1000.);)
+      if ( level & DLT_FATAL )
+      {
+        SEND(ALL, sprintf(_xs, "  FATAL");)
+        while ( 1 )
+        {
+          vTaskDelay(ONE_SECOND);
+        }
+      }
+      return true; // Send out the message
     }
+
     i++;
   }
 
   /*
-   *   Print out the message
+   *   We did not find the DLT level, return false to not send out the message
    */
-  SEND(ALL, sprintf(_xs, "\r\n%c (%.3f) ", dlt_id, run_time_ms() / 1000.);)
 
-  return true;
+  return false;
 }
+
 /*----------------------------------------------------------------
  *
  * @function: heartbeat
@@ -823,7 +877,8 @@ bool do_dlt(           //
  *
  *--------------------------------------------------------------*/
 static char *run_state_text[] = {"IN_STARTUP", "IN_OPERATION", "IN_TEST", "IN_SLEEP", "IN_SHOT", "IN_REDUCTION", 0};
-void         heartbeat(void)
+
+void heartbeat(void)
 {
   char s[128];
   int  i;
@@ -840,7 +895,7 @@ void         heartbeat(void)
     i++;
   }
 
-  DLT(DLT_HEARTBEAT, SEND(ALL, sprintf(_xs, "Heartbeat: 60s  run_state: 0X%02X%s", run_state, s);))
+  DLT(DLT_HEARTBEAT, SEND(CONSOLE, sprintf(_xs, "Heartbeat: 60s  run_state: 0X%02X%s", run_state, s);))
 
   return;
 }
@@ -914,14 +969,14 @@ void set_diag_LED(char        *new_LEDs, // NEW LED display
  *
  *--------------------------------------------------------------*/
 #define NONE    0
-#define SOME    1
+#define V12_LOW 1
 #define V12OK   2
 #define UNKNOWN 99
 
 bool check_12V(void)
 {
   static unsigned int fault_V12 = UNKNOWN;
-  float               v12;
+  real_t              v12;
 
   /*
    *  Check to see that the witness paper is enabled
@@ -950,10 +1005,10 @@ bool check_12V(void)
 
   if ( v12 <= V12_WORKING )
   {
-    if ( fault_V12 != SOME )
+    if ( fault_V12 != V12_LOW )
     {
       set_status_LED(LED_LOW_12V);
-      fault_V12 = SOME;
+      fault_V12 = V12_LOW;
     }
     return false;
   }
@@ -995,8 +1050,8 @@ void test_build_fake_shots(void)
     record[i].y              = 2 * i + 1;
     record[i].xs             = 2 * i + 2;
     record[i].ys             = 2 * i + 3;
-    record[i].radius         = sqrt(sq(record[i].x) + sq(record[i].y));
-    record[i].angle          = 180.0 * atan2(record[i].y, record[i].x) / PI;
+    record[i].radius         = sqrt(SQ(record[i].x) + SQ(record[i].y));
+    record[i].angle          = atan2_degrees(record[i].y, record[i].x);
     record[i].timer_count[0] = 1;
     record[i].timer_count[1] = 2;
     record[i].timer_count[2] = 3;
@@ -1013,6 +1068,7 @@ void test_build_fake_shots(void)
   /*
    *  Finished
    */
+
   shot_in = i;
   SEND(ALL, sprintf(_xs, _DONE_);)
 
@@ -1067,7 +1123,7 @@ static void test_display_all_scores(void)
  * operation of the target detection.
  *
  *--------------------------------------------------------------*/
-static float rapid_schedule[] = {2.0, 1.0, .75, .5, .25, -1};
+static real_t rapid_schedule[] = {2.0, 1.0, .75, .5, .25, -1};
 
 static void test_rapidfire(void)
 {
@@ -1093,5 +1149,89 @@ static void test_rapidfire(void)
    *  Finished
    */
   SEND(ALL, sprintf(_xs, _DONE_);)
+  return;
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: mfs_test_build_json_score
+ *
+ * @brief:    Build a fake score message and send it
+ *
+ * @return:   None
+ *
+ *----------------------------------------------------------------
+ *
+ * This self test sends a score message to the PC or network
+ * to simulate a shot.
+ *
+ *--------------------------------------------------------------*/
+#define TARGET_RADIUS 25.0
+void mfs_test_build_json_score(void)
+{
+  char       str[LARGE_STRING];
+  static int test_shot = 0;
+
+  record[0].shot = test_shot++;
+  record[0].x_mm = ((real_t)(esp_random() % 2000) - 1000) / 1000.0 * TARGET_RADIUS; // Pick a random location
+  record[0].y_mm = ((real_t)(esp_random() % 2000) - 1000) / 1000.0 * TARGET_RADIUS;
+
+  build_json_score(&record[0], SCORE_USB);
+  strncpy(str, _xs, sizeof(str));
+  SEND(CONSOLE, sprintf(_xs, "\r\nUSB:       %s", str);)
+
+  build_json_score(&record[0], SCORE_TCPIP);
+  strncpy(str, _xs, sizeof(str));
+  SEND(TCPIP, sprintf(_xs, "\r\nTCPIP:     %s", str);)
+
+  build_json_score(&record[0], SCORE_BLUETOOTH);
+  strncpy(str, _xs, sizeof(str));
+  SEND(AUX | BLUETOOTH | RS485, sprintf(_xs, "\r\nAUX: %s", str);)
+
+  SEND(ALL, sprintf(_xs, _DONE_);)
+  return;
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: interrupt_face_strike_test
+ *
+ * @brief:    Listen for a face strike and print out the results
+ *
+ * @return:   None
+ *
+ *----------------------------------------------------------------
+ *
+ * The face strike test polls face_strike and marks when it
+ * detects a face strike.
+ *
+ *--------------------------------------------------------------*/
+
+static void interrupt_face_strike_test(void)
+{
+  unsigned int last_face_strike = 0;
+
+  json_face_strike = 1;           // Force the face strike to be enabled
+  enable_face_strike_interrupt(); // Enable the face strike interrupt
+
+  while ( 1 )
+  {
+    if ( face_strike != last_face_strike )
+    {
+      last_face_strike = face_strike;
+      SEND(ALL, sprintf(_xs, "\r\nFace strike detected: %d", face_strike);)
+    }
+
+    if ( serial_available(ALL) )
+    {
+      if ( serial_getch(ALL) == '!' )
+      {
+        break; // Exit on !
+      }
+    }
+
+    vTaskDelay(100);
+  }
+
   return;
 }

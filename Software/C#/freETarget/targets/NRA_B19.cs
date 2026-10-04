@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 
 //NRA version of ISSF precision target reduced for 50 yards
 namespace freETarget.targets {
+    [Serializable]
     class NRA_B19 : aTarget {
         private decimal pelletCaliber;
         private const decimal targetSize = 550; //mm
@@ -54,7 +55,7 @@ namespace freETarget.targets {
             return ring10 / 2m + pelletCaliber / 2m;
         }
         public override string getName() {
-            return typeof(Pistol50m).FullName;
+            return typeof(NRA_B19).FullName;
         }
 
         public override decimal getOutterRing() {
