@@ -131,7 +131,8 @@ namespace freETarget.targets {
                         it.DrawEllipse(p, x, x, circle, circle);
                     }
 
-                    if (r <= getRingTextCutoff()) {
+                    //numbers are drawn from getRingTextStart() to getRingTextCutoff(). the lower limit lets a target draw its outer rings without numbers (DGI M90C)
+                    if (r <= getRingTextCutoff() && r >= getRingTextStart()) {
                         String txt = r.ToString();
 
                         StringFormat format = new StringFormat();
@@ -155,6 +156,21 @@ namespace freETarget.targets {
                                 Font f = new Font("Arial", fontSize);
 
 
+
+                                //ring numbers at free angles. the north/south/east/west blocks below can only place numbers 90 degrees apart
+                                //(optionally all rotated by getTextRotation()), which can not describe a target with 3 numbers 120 degrees apart (DGI M90C).
+                                //a target that uses this returns false from the 4 draw...Text() functions, otherwise both sets are drawn.
+                                int[] textAngles = getTextAngles();
+                                if (textAngles != null) {
+                                    float distance = (circle / 2) - (diff / 4) + getTextOffset(diff, r); //same distance from the center as the north/south/east/west text: a quarter of the ring width inside the ring line
+                                    foreach (int angle in textAngles) {
+                                        double radians = angle * Math.PI / 180;
+                                        float textX = center + distance * (float)Math.Cos(radians);
+                                        float textY = center - distance * (float)Math.Sin(radians); //minus because the y axis of the bitmap points down, and the angles are counterclockwise
+                                        //the text is drawn upright (no RotateTransform), centered on the point
+                                        it.DrawString(txt, f, bText, textX, textY, format);
+                                    }
+                                }
 
                                 if (drawNorthText()) {
                                     it.TranslateTransform(dimension / 2, dimension / 2); //set coordinates in the middle of the target
@@ -408,6 +424,21 @@ namespace freETarget.targets {
                 it.DrawLine(p, x.X - cross, x.Y, x.X + cross, x.Y);
                 it.DrawLine(p, x.X, x.Y - cross, x.X, x.Y + cross);
             }
+        }
+
+        //angles where the ring numbers are drawn, for targets that do not have their numbers at north/south/east/west.
+        //in degrees, 0 = right (east), counterclockwise: 90 = up, 180 = left, 270 = down.
+        //virtual with null as default (= not used) instead of abstract, so the existing targets do not have to be changed.
+        //only used by the on-screen target; PDFGenerator has its own drawing code and always uses north/south/east/west.
+        public virtual int[] getTextAngles() {
+            return null;
+        }
+
+        //first ring that gets a number, for targets where the outer rings are drawn without numbers.
+        //counterpart of getRingTextCutoff(), which is the last ring that gets a number.
+        //default is the first ring of the target (= all outer rings are numbered), so the existing targets are not affected.
+        public virtual int getRingTextStart() {
+            return getFirstRing();
         }
 
         //default score calculation. can be overriden at target level if the formula is not linear
