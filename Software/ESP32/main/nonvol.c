@@ -445,7 +445,42 @@ void nonvol_write_i32(char *name, int *value) // Name of the value to write
 {
   DLT(DLT_DEBUG, SEND(CONSOLE, sprintf(_xs, "nonvol_write(%s)\r\n", name);))
 
-  if ( nvs_set_i32(my_handle, name, value) != ESP_OK )
+  if ( nvs_set_i32(my_handle, name, *value) != ESP_OK ) // Store the value, not the address of the value
+  {
+    DLT(DLT_CRITICAL, SEND(CONSOLE, sprintf(_xs, "Failed to write %s to NONVOL", name);))
+  }
+
+  /*
+   * All done, return
+   */
+  nvs_commit(my_handle);
+  return;
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: nonvol_write_str
+ *
+ * @brief:  Write a single text string to the nonvol
+ *
+ * @return: None
+ *---------------------------------------------------------------
+ *
+ * Text version of nonvol_write_i32.  The string is written to
+ * persistent storage under the given NVS key and committed
+ * immediately so that it survives a power cycle.
+ *
+ * The caller is responsible for making sure that the string
+ * fits in the RAM copy that read_nonvol() will load it into
+ * (see the size encoded in the JSON table).
+ *
+ *------------------------------------------------------------*/
+void nonvol_write_str(char *name,  // Name of the value to write
+                      char *value) // Null terminated string to store
+{
+  DLT(DLT_DEBUG, SEND(CONSOLE, sprintf(_xs, "nonvol_write_str(%s)\r\n", name);))
+
+  if ( nvs_set_str(my_handle, name, value) != ESP_OK )
   {
     DLT(DLT_CRITICAL, SEND(CONSOLE, sprintf(_xs, "Failed to write %s to NONVOL", name);))
   }

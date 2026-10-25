@@ -97,6 +97,7 @@ const json_message_t JSON[] = {
     {SHOW,        "\"RAPID_WAIT\":",     &json_rapid_wait,            IS_FLOAT,               0,                  0,                          0,          0 },
     {SHOW + LOCK, "\"REMOTE_ACTIVE\":",  &json_remote_active,         IS_INT32,               0,                  NONVOL_REMOTE_ACTIVE,       0,          8 },
     {SHOW + LOCK, "\"REMOTE_KEY\":",     &json_remote_key,            IS_TEXT + KEY_SIZE,     0,                  NONVOL_REMOTE_KEY,          0,          8 },
+    {SHOW + LOCK, "\"REMOTE_KEY_MODE\":", &json_remote_key_mode,      IS_INT32,               0,                  NONVOL_REMOTE_KEY_MODE,     REMOTE_KEY_IN_BODY, 18},
     {SHOW + LOCK, "\"REMOTE_URL\":",     (int *)&json_remote_url,     IS_TEXT + URL_SIZE,     0,                  NONVOL_REMOTE_URL,          0,          8 },
     {HIDE,        "\"RESET\"",           0,                           IS_VOID,                &esp_restart,       0,                          0,          0 },
     {SHOW + LOCK, "\"SEND_MISS\":",      &json_send_miss,             IS_INT32,               0,                  NONVOL_SEND_MISS,           0,          0 },

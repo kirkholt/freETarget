@@ -73,7 +73,7 @@ extern char                 input_JSON[];
 #define SSID_SIZE          31                          // Reserve 30+1 bytes for SSID
 #define PWD_SIZE           63                          // Reserve 63+1 bytes for Password
 #define URL_SIZE           128                         // Reserve 129 bytes for server URL
-#define KEY_SIZE           31                          // Key size for remote access
+#define KEY_SIZE           63                          // Key size for remote access (room for a 36 character GUID)
 #define SMALL_STRING       32                          // Small strings are 32 bytes long
 #define LARGE_STRING       128                         // Large strings are 128 bytes long
 #define EXTRA_LARGE_STRING 1024                        // Really long string for files
@@ -81,6 +81,12 @@ extern char                 input_JSON[];
 #define JSON_NAME_TEXT     99                          // Name ID = User defined
 #define JSON_NAME_CLIENT   100                         // Name ID = Client defined
 #define JSON_NAME_SN       101                         // Name ID = Serial Number
+
+/*
+ * How the remote access key (json_remote_key) is delivered to the REST server
+ */
+#define REMOTE_KEY_IN_BODY   0                         // Add an "apikey" field to the JSON payload
+#define REMOTE_KEY_IN_HEADER 1                         // Send the key in an X-API-KEY HTTP header
 
 /*
  * Global JSON variables and settings
@@ -158,13 +164,13 @@ EXTERN int    json_wifi_reset_first;          // Reset the target on first WiFi 
 EXTERN int    json_paper_shot;                // How many shots before advancing paper
 EXTERN int    json_aux_mode;                  // Enable comms from the AUX port
 EXTERN char   json_remote_url[URL_SIZE];      // Where are the messages going?
-EXTERN int    json_remote_active[URL_SIZE];   // Is there a remote present
-EXTERN char   json_remote_key[URL_SIZE];      // Security key if nessary
+EXTERN int    json_remote_active;             // Set to 1 to POST every shot to json_remote_url
+EXTERN char   json_remote_key[URL_SIZE];      // Security key (GUID) if nessary
+EXTERN int    json_remote_key_mode;           // How the key is sent (REMOTE_KEY_IN_BODY / REMOTE_KEY_IN_HEADER)
 EXTERN char   json_athlete[SMALL_STRING];     // Athelete shooting
 EXTERN char   json_event[SMALL_STRING];       // Event being shot
 EXTERN char   json_target_name[SMALL_STRING]; // Target being shot at
 EXTERN char   json_name_text[SMALL_STRING];   // Target name, ex (Target 54))
-EXTERN int    json_remote_modes;              // What modes are available to talk to a remote server
 EXTERN int    json_session_type;              // What kind of session is this?
 EXTERN char   json_ota_url[URL_SIZE];         // OTA URL
 EXTERN int    json_lock;                      // Lock the JSON message so it cannot be changed

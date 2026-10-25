@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<!--
+  remote.html
+
+  Configure the REST server that every shot is POSTed to.
+
+  This page is sent through http_printf() in http_services.c, which
+  replaces the following fields with the current settings:
+
+    ^U  REMOTE_URL
+    ^K  REMOTE_KEY
+    ^0  "selected" if the key is sent as "apikey" in the JSON body
+    ^1  "selected" if the key is sent as an X-API-KEY header
+    ^R  "checked" if REMOTE_ACTIVE is set
+    ^S  Last HTTP status returned by the server
+
+  Do not use the caret character anywhere else in this file.
+-->
+
+<head>
+  <title>FreeETargetRemote</title>
+  <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+
+  <style>
+    html {
+      font-family: Helvetica;
+      display: inline-block;
+      margin: 0px auto;
+      text-align: center;
+    }
+
+    .remote-field {
+      width: 320px;
+      max-width: 90vw;
+      font-family: "Arial";
+      font-size: 16px;
+      height: 36px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+    }
+
+    .remote-button-SAVE {
+      width: 100px;
+      font-family: "Arial";
+      font-size: 16px;
+      height: 46px;
+      border-radius: 9px;
+      background-color: #00FF00;
+    }
+
+    .remote-button-TEST {
+      width: 100px;
+      font-family: "Arial";
+      font-size: 16px;
+      height: 46px;
+      border-radius: 9px;
+      background-color: aqua;
+    }
+
+    .remote-button-SAVE:hover,
+    .remote-button-TEST:hover {
+      background-color: pink;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>FreeETarget Remote Server</h1>
+
+  <form name="remote" action="/remote" method="get">
+    <h2>Server URL</h2>
+    <input type="text" name="url" class="remote-field" placeholder="https://example.com/api/shots" value="^U">
+
+    <h2>Access Key</h2>
+    <input type="text" name="key" class="remote-field" placeholder="00000000-0000-0000-0000-000000000000" value="^K">
+
+    <h2>Send Key As</h2>
+    <select name="kmode" class="remote-field">
+      <option value="0" ^0>apikey in JSON body</option>
+      <option value="1" ^1>X-API-KEY header</option>
+    </select>
+
+    <h2><label><input type="checkbox" name="active" value="1" ^R> Send shots to the server</label></h2>
+
+    <input type="submit" class="remote-button-SAVE" name="save" value="SAVE">
+  </form>
+
+  <p>
+    <a href="/remote?test=1"><button class="remote-button-TEST">TEST</button></a>
+  </p>
+
+  <p>Last server status: ^S</p>
+  <p><a href="/menu">Back to the target menu</a></p>
+</body>
+
+</html>

@@ -475,11 +475,8 @@ unsigned int reduce(void)
         build_json_score(&record[shot_out], SCORE_TCPIP);
         serial_to_all(_xs, TCPIP);
 
-        if ( (json_remote_modes & REMOTE_MODE_CLIENT) != 0 )
-        {
-          build_json_score(&record[shot_out], SCORE_TCPIP);
-          http_native_request(json_remote_url, METHOD_POST, _xs, sizeof(_xs));
-        }
+        build_json_score(&record[shot_out], SCORE_TCPIP); // Queue the shot for the REST server
+        http_post_shot(_xs);                              // (does nothing unless REMOTE_ACTIVE is set)
 
         /*
          *  Advance the paper
@@ -605,11 +602,8 @@ void start_new_session(int session_type) //
           build_json_score(&record[i], SCORE_USB);             // Send out to the USB
           serial_to_all(_xs, ALL);
 
-          if ( (json_remote_modes & REMOTE_MODE_CLIENT) != 0 ) // Send out to the server
-          {
-            build_json_score(&record[i], SCORE_TCPIP);
-            http_native_request(json_remote_url, METHOD_POST, _xs, sizeof(_xs));
-          }
+          build_json_score(&record[i], SCORE_TCPIP);           // Send out to the REST server
+          http_post_shot(_xs);                                 // (does nothing unless REMOTE_ACTIVE is set)
         }
       }
       break;

@@ -32,6 +32,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 #include "esp_system.h"
 
 #include "esp_http_client.h"
@@ -537,127 +538,262 @@ void https_async(char *url,    // URL to connect to
 #if ( BUILD_SIMPLE )
 /*----------------------------------------------------------------
  *
- * @function: http_native_request
+ * POST shots to a remote REST server
  *
- * @brief:    REST server called by a URL
+ *---------------------------------------------------------------
+ *
+ * Every shot can be sent as a JSON document to a REST server
+ * configured by the user (from the JSON interface or from the
+ * /remote web page on port 81):
+ *
+ *  REMOTE_URL      - Where the shot is POSTed (http:// or https://)
+ *  REMOTE_KEY      - Access key (typically a GUID)
+ *  REMOTE_KEY_MODE - 0: Add "apikey":"<key>" to the JSON payload
+ *                    1: Send the key in an X-API-KEY HTTP header
+ *  REMOTE_ACTIVE   - 1 to enable the transfer
+ *
+ * A network transfer can take several seconds (DNS lookup, TLS
+ * handshake, slow or missing server), so it must never be done
+ * from the shot processing loop.  Instead http_post_shot() makes
+ * a copy of the score on the heap and puts a pointer to it on a
+ * queue.  http_post_task() takes the scores off the queue one at
+ * a time and does the actual POST.
+ *
+ * If the server cannot keep up and the queue is full, the newest
+ * shot is dropped rather than stalling the target.
+ *
+ *------------------------------------------------------------*/
+static QueueHandle_t http_post_queue       = NULL; // Queue of (char *) scores waiting to be POSTed
+int                  http_post_last_status = 0;    // Last HTTP status (0 = none sent, -1 = connection failed)
+
+static void http_post_task(void *parameters);      // Task that empties the queue
+
+/*----------------------------------------------------------------
+ *
+ * @function: http_post_init
+ *
+ * @brief:    Create the queue and the task used to POST shots
  *
  * @return:   None
  *
  *---------------------------------------------------------------
  *
- * http_native_request() demonstrates use of low level APIs to connect to a
- *server, make a http request and read response. Event handler is not used in
- *this case. Note: This approach should only be used in case use of low level
- *APIs is required. The easiest way is to use esp_http_perform()
+ * Called once from app_main() after the other tasks have been
+ * started.
  *
- * The url is of the form http://my_url.com/option/option...
- *
- * test URL http://freetarget/
+ * The task is given an 8K stack because the TLS handshake used
+ * by https:// URLs runs on the stack of the calling task.
  *
  *------------------------------------------------------------*/
-void http_native_request(char *server_url,    // URL to be accessed
-                         int   method,        // Transfer method
-                         char *payload,       // Payload to be sent/received
-                         int   payload_length // How much space is available
-)
+void http_post_init(void)
 {
-#if ( INCLUDE_GET )
-  int content_length;                         // Size of internal transfer
-  int data_read;                              // Size of data read on header
-#endif
-
-  esp_http_client_config_t config = {.url = "http://joshua.10nine.co/api/shots"};
-  esp_http_client_handle_t client = esp_http_client_init(&config);
-
-  switch ( method )
+  if ( http_post_queue != NULL ) // Already running
   {
-#if ( INCLUDE_GET )
-    case METHOD_GET:
-      esp_http_client_set_url(client, server_url);
-      esp_http_client_set_method(client, HTTP_METHOD_GET);
-      esp_err_t err = esp_http_client_open(client, 0);
-      if ( err != ESP_OK )
-      {
-        DLT(DLT_CRITICAL, printf("Failed to open HTTP connection: %s", url);)
-      }
-      else
-      {
-        content_length = esp_http_client_fetch_headers(client);
-        if ( content_length < 0 )
-        {
-          DLT(DLT_DIAG, printf("HTTP client fetch headers failed");)
-        }
-      }
-      else
-      {
-        data_read = esp_http_client_read_response(client, output_buffer, MAX_HTTP_OUTPUT_BUFFER);
-        if ( data_read >= 0 )
-        {
-          ESP_LOGI(TAG, "HTTP GET Status = %d, content_length = %" PRId64, esp_http_client_get_status_code(client),
-                   esp_http_client_get_content_length(client));
-          ESP_LOG_BUFFER_HEX(TAG, output_buffer, data_read);
-        }
-        else
-        {
-          DLT(DLT_DIAG, printf() "Failed to read response from %s", url);)
-        }
-      }
-      esp_http_client_close(client);
-      break;
-#endif
-
-#if ( INCLUDE_POST )
-    case METHOD_POST:
-      esp_http_client_set_url(client, server_url);
-      esp_http_client_set_method(client, HTTP_METHOD_POST);
-      esp_http_client_set_header(client, "Content-Type", "application/json");
-#if ( INCLUDE_API_KEY )
-      esp_http_client_set_header(client, "X-API-KEY", API_KEY);
-#endif
-      DLT(DLT_APPLICATION, printf("POST");)
-      DLT(DLT_APPLICATION, printf("URL:%s", server_url);)
-      DLT(DLT_APPLICATION, printf("Payload: %s", payload);)
-      if ( esp_http_client_open(client, strlen(payload)) != ESP_OK )
-      {
-        DLT(DLT_CRITICAL, printf("Failed to open HTTP connection: %s", server_url);)
-      }
-      else
-      {
-        if ( esp_http_client_write(client, payload, strlen(payload)) < 0 )
-        {
-          DLT(DLT_DIAG, printf("HTTP Write failed %s", server_url);)
-        }
-        if ( esp_http_client_fetch_headers(client) < 0 )
-        {
-          DLT(DLT_DIAG, printf("HTTP client fetch headers failed");)
-        }
-        else
-        {
-          //                   DLT(DLT_APPLICATION, for(i=0; i != payload_length;
-          //                   i++){payload[i] = 0;})
-          if ( esp_http_client_read_response(client, payload, payload_length) >= 0 )
-          {
-            if ( esp_http_client_get_status_code(client) != 200 )
-            {
-              DLT(DLT_CRITICAL, printf("HTTP POST Status = %d, content_length = %" PRId64, esp_http_client_get_status_code(client),
-                                       esp_http_client_get_content_length(client));)
-              DLT(DLT_APPLICATION, printf("\r\npayload:%s\r\n", payload);)
-            }
-          }
-          else
-          {
-            DLT(DLT_DIAG, printf("Failed to read response");)
-          }
-        }
-      }
-      esp_http_client_cleanup(client);
-      break;
+    return;
   }
-#endif
+
+  http_post_queue = xQueueCreate(HTTP_POST_QUEUE_SIZE, sizeof(char *));
+  if ( http_post_queue == NULL )
+  {
+    DLT(DLT_CRITICAL, printf("http_post_init: Unable to create the POST queue");)
+    return;
+  }
+
+  xTaskCreate(http_post_task, "http_post_task", 8 * 1024, NULL, 0, NULL); // Lowest (background) priority
+
   /*
-   * Return to the caller
+   *  All done, return
    */
   return;
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: http_post_shot
+ *
+ * @brief:    Queue a JSON score to be POSTed to the remote server
+ *
+ * @return:   None
+ *
+ *---------------------------------------------------------------
+ *
+ * The score normally comes from build_json_score(), which starts
+ * the JSON with "{{{{{" to wake up the PC client.  That is not
+ * valid JSON for a REST server, so the extra braces are removed
+ * before the score is queued.
+ *
+ * This function never blocks.  It returns immediately if the
+ * remote server is disabled, has no URL, or the queue is full.
+ *
+ * The caller's buffer (usually _xs) can be reused as soon as
+ * this function returns.
+ *
+ *------------------------------------------------------------*/
+void http_post_shot(const char *json) // JSON score to send
+{
+  const char *start;                  // Start of the JSON document
+  char       *copy;                   // Copy of the JSON placed on the queue
+
+  if ( (http_post_queue == NULL)      // Not initialized
+       || (json_remote_active == 0)   // or disabled
+       || (json_remote_url[0] == 0) ) // or nowhere to send it
+  {
+    return;
+  }
+
+  /*
+   *  Find the start of the JSON and skip the wake up braces
+   */
+  start = strchr(json, '{');
+  if ( start == NULL )
+  {
+    DLT(DLT_COMMUNICATION, printf("http_post_shot: Not a JSON document");)
+    return;
+  }
+  while ( *(start + 1) == '{' )
+  {
+    start++;
+  }
+
+  /*
+   *  Copy it onto the heap and hand it over to the POST task
+   */
+  copy = strdup(start);
+  if ( copy == NULL )
+  {
+    DLT(DLT_COMMUNICATION, printf("http_post_shot: Out of memory, shot dropped");)
+    return;
+  }
+
+  if ( xQueueSend(http_post_queue, &copy, 0) != pdTRUE ) // Do not wait if the queue is full
+  {
+    DLT(DLT_COMMUNICATION, printf("http_post_shot: Queue full, shot dropped");)
+    free(copy);
+  }
+
+  /*
+   *  All done, return
+   */
+  return;
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: http_post_task
+ *
+ * @brief:    Take scores off the queue and POST them to the server
+ *
+ * @return:   Never
+ *
+ *---------------------------------------------------------------
+ *
+ * For each score:
+ *
+ *  1 - Copy the score into the payload buffer and, if the key is
+ *      sent in the body, add ,"apikey":"<key>" in front of the
+ *      closing }
+ *  2 - Open a client to REMOTE_URL.  The ESP-IDF certificate
+ *      bundle is attached so that https:// servers with a public
+ *      certificate are accepted.
+ *  3 - Add the X-API-KEY header if the key is sent in the header
+ *  4 - POST the payload and remember the HTTP status code so that
+ *      it can be shown on the /remote web page
+ *
+ * The URL and key are copied at the start of each transfer so a
+ * change made from the web page cannot alter them half way
+ * through a POST.
+ *
+ * Only printf() is used for diagnostics because the shared _xs
+ * buffer belongs to the shot processing loop.
+ *
+ *------------------------------------------------------------*/
+static void http_post_task(void *parameters)
+{
+  static char              payload[HTTP_POST_PAYLOAD_SIZE]; // JSON sent to the server
+  static char              url[URL_SIZE];                   // Copy of json_remote_url
+  static char              key[URL_SIZE];                   // Copy of json_remote_key
+  char                    *shot;                            // Score taken off the queue
+  char                    *close_brace;                     // Location of the closing }
+  esp_http_client_handle_t client;                          // HTTP client for this transfer
+  esp_err_t                err;                             // Result of the transfer
+
+  while ( 1 )
+  {
+    if ( xQueueReceive(http_post_queue, &shot, portMAX_DELAY) != pdTRUE )
+    {
+      continue;
+    }
+
+    /*
+     *  Take a snapshot of the settings and build the payload
+     */
+    strncpy(url, json_remote_url, sizeof(url) - 1);
+    url[sizeof(url) - 1] = 0;
+    strncpy(key, json_remote_key, sizeof(key) - 1);
+    key[sizeof(key) - 1] = 0;
+
+    strncpy(payload, shot, sizeof(payload) - 1);
+    payload[sizeof(payload) - 1] = 0;
+    free(shot);                                             // The heap copy is no longer needed
+
+    if ( (key[0] != 0) && (json_remote_key_mode == REMOTE_KEY_IN_BODY) )
+    {
+      close_brace = strrchr(payload, '}');
+      if ( (close_brace != NULL)                            // Room for ,"apikey":"<key>"}
+           && ((size_t)(close_brace - payload) + strlen(key) + sizeof(", \"apikey\":\"\"}") < sizeof(payload)) )
+      {
+        sprintf(close_brace, ", \"apikey\":\"%s\"}", key);
+      }
+      else
+      {
+        DLT(DLT_COMMUNICATION, printf("http_post_task: No room for the apikey");)
+      }
+    }
+
+    /*
+     *  Set up the client
+     */
+    esp_http_client_config_t config = {
+        .url        = url,
+        .method     = HTTP_METHOD_POST,
+        .timeout_ms = HTTP_POST_TIMEOUT_MS,
+#if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
+        .crt_bundle_attach = esp_crt_bundle_attach, // Accept servers signed by a public CA (https://)
+#endif
+    };
+    client = esp_http_client_init(&config);
+    if ( client == NULL )
+    {
+      DLT(DLT_COMMUNICATION, printf("http_post_task: Unable to create a client for %s", url);)
+      http_post_last_status = -1;
+      continue;
+    }
+
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    if ( (key[0] != 0) && (json_remote_key_mode == REMOTE_KEY_IN_HEADER) )
+    {
+      esp_http_client_set_header(client, "X-API-KEY", key);
+    }
+    esp_http_client_set_post_field(client, payload, strlen(payload));
+
+    /*
+     *  Send it and report the result
+     */
+    DLT(DLT_COMMUNICATION, printf("POST %s %s", url, payload);)
+    err = esp_http_client_perform(client);
+    if ( err == ESP_OK )
+    {
+      http_post_last_status = esp_http_client_get_status_code(client);
+      DLT(DLT_COMMUNICATION, printf("HTTP POST Status = %d", http_post_last_status);)
+    }
+    else
+    {
+      http_post_last_status = -1;
+      DLT(DLT_COMMUNICATION, printf("HTTP POST to %s failed: %s", url, esp_err_to_name(err));)
+    }
+
+    esp_http_client_cleanup(client);
+  }
 }
 #endif
 

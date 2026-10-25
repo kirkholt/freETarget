@@ -29,8 +29,10 @@
 #define INCLUDE_PATCH   0     // Include PATCH methods
 #define INCLUDE_DELETE  0     // Include DELETE methods
 #define INCLUDE_HEAD    0     // Include HEAD methods
-#define INCLUDE_API_KEY 1     // Include an API key
-#define API_KEY         "cpe-1704-tks"
+
+#define HTTP_POST_QUEUE_SIZE   8    // Number of shots that can wait to be POSTed to the remote server
+#define HTTP_POST_PAYLOAD_SIZE 640  // Largest JSON payload (score + apikey) POSTed to the remote server
+#define HTTP_POST_TIMEOUT_MS   5000 // Give up on the remote server after 5 seconds
 
 #define METHOD_GET    0       // enum used to identify a get method
 #define METHOD_POST   1       // enum used to identify a post method
@@ -85,7 +87,15 @@ void http_absolute_redirect_manual(void);
 void http_download_chunk(char *url, char *payload);
 void http_perform_as_stream_reader(char *url, char *payload);
 
-void http_native_request(char *url, int method, char *payload, int payload_length); // Low level API
 void http_partial_download(char *url, char *range_string);
+
+#if ( BUILD_SIMPLE )
+/*
+ *  POST shots to a remote REST server (see REMOTE_URL, REMOTE_KEY, REMOTE_KEY_MODE, REMOTE_ACTIVE)
+ */
+void       http_post_init(void);             // Create the queue and the task that POSTs shots
+void       http_post_shot(const char *json); // Queue a JSON score to be POSTed to the remote server
+extern int http_post_last_status;            // Last HTTP status from the server (0 = none sent, -1 = connection failed)
+#endif
 
 #endif

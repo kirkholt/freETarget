@@ -8,7 +8,7 @@
 #ifndef _NONVOL_H
 #define _NONVOL_H
 
-#define PS_VERSION   17                                   // Persistent storage version
+#define PS_VERSION   18                                  // Persistent storage version
 #define PS_UNINIT(x) (((x) == 0xABAB) || ((x) == 0xFFFF)) // Uninitilized value
 
 #define NAME_SPACE "freETarget"
@@ -24,6 +24,7 @@ void read_nonvol(void);                           // Read in the locations
 void update_nonvol(unsigned int current_version); // Update the database if needed
 void restore_nonvol(void);                        // Copyt the nonvol back
 void nonvol_write_i32(char *name, int *value);    // Write a value to nonvol
+void nonvol_write_str(char *name, char *value);   // Write a string to nonvol
 
 /*
  * NON Vol Storage
@@ -91,6 +92,7 @@ void nonvol_write_i32(char *name, int *value);    // Write a value to nonvol
 #define NONVOL_REMOTE_ACTIVE       "REMOTE_ACTIVE"       // Send score to a remote server
 #define NONVOL_REMOTE_URL          "REMOTE_URL"          // URL of the remote server
 #define NONVOL_REMOTE_KEY          "REMOTE_KEY"          // Remote server access key
+#define NONVOL_REMOTE_KEY_MODE     "REMOTE_KMODE"        // How the access key is sent (NVS keys are limited to 15 characters)
 #define NONVOL_ATHELETE            "ATHELETE"            // Remember the athelete name
 #define NONVOL_EVENT               "EVENT"               // Remember the shooting event
 #define NONVOL_TARGET_NAME         "TARGET_NAME"         // Rememver the target name

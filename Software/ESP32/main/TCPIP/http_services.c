@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/param.h>
+#include <ctype.h>
 #include "esp_http_server.h"
 #include "esp_event.h"
 #include "esp_netif.h"
@@ -35,6 +36,9 @@
 #include "diag_tools.h"
 #include "json.h"
 #include "serial_io.h"
+#include "nvs.h"
+#include "nonvol.h"
+#include "http_client.h"
 
 #include "html.h"
 
@@ -78,6 +82,7 @@ static esp_err_t service_get_who(httpd_req_t *req);                             
 static esp_err_t service_get_FreeETarget_png(httpd_req_t *req);                        // Icon for the FreeETarget page
 static esp_err_t service_get_json(httpd_req_t *req);                                   // Webb ased JSON interface
 static esp_err_t service_get_events(httpd_req_t *req);                                 // Get shot events
+static esp_err_t service_get_remote(httpd_req_t *req);                                 // Remote REST server setup
 static esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err);       // Create a URL not found handler
 static esp_err_t service_post_post(httpd_req_t *req);
 static void      http_printf(const char *format, httpd_req_t *req, unsigned int size); // Formatted print to the HTTP request
@@ -96,6 +101,7 @@ const my_uri_t uri_list[] = {
 
     {EVENT_HTTP_PORT,   "Target control menu", {"/", HTTP_GET, service_get_menu, (void *)&event_menu_ctx}         }, // Control back channel
     {EVENT_HTTP_PORT,   "Target control menu", {"/menu", HTTP_GET, service_get_menu, (void *)&event_menu_ctx}     },
+    {EVENT_HTTP_PORT,   "Remote server setup", {"/remote", HTTP_GET, service_get_remote, NULL}                    },
     {EVENT_HTTP_PORT,   "Duplicate Help menu", {"/help", HTTP_GET, service_get_help, NULL}                        },
     {EVENT_HTTP_PORT,   "",                    {"/favicon.ico", HTTP_GET, service_get_FreeETarget_png, NULL}      },
     {0,                 "",                    {"", 0, NULL, NULL}                                                }
@@ -390,6 +396,177 @@ static esp_err_t service_get_menu(httpd_req_t *req)
   target_name(my_name);                                 // Get the target name
   httpd_resp_set_hdr(req, "get_menu", my_name);
   http_printf(&menu_html_start, req, SIZEOF_menu_HTML); // point to the target HTML file
+
+  return ESP_OK;
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: url_decode
+ *
+ * @brief:    Decode a URL encoded form value in place
+ *
+ * @return:   None
+ *
+ *---------------------------------------------------------------
+ *
+ * A browser submitting a GET form encodes the values, for example
+ *
+ *   https://my.server/api  ->  https%3A%2F%2Fmy.server%2Fapi
+ *   two words              ->  two+words
+ *
+ * This function reverses the encoding.  The decoded string is
+ * never longer than the encoded one, so it is done in place.
+ *
+ *------------------------------------------------------------*/
+static void url_decode(char *s) // String to decode
+{
+  char *out;                    // Where the decoded character goes
+  char  hex[3];                 // Two hex digits and a null
+
+  out = s;
+  while ( *s != 0 )
+  {
+    if ( (*s == '%') && isxdigit((int)*(s + 1)) && isxdigit((int)*(s + 2)) ) // %XX escape
+    {
+      hex[0] = *(s + 1);
+      hex[1] = *(s + 2);
+      hex[2] = 0;
+      *out   = (char)strtol(hex, NULL, 16);
+      s += 3;
+    }
+    else if ( *s == '+' )                                                    // + is a space
+    {
+      *out = ' ';
+      s++;
+    }
+    else
+    {
+      *out = *s;
+      s++;
+    }
+    out++;
+  }
+  *out = 0;
+
+  return;
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: service_get_remote
+ *
+ * @brief:    Set up the REST server that shots are POSTed to
+ *
+ * @return:   esp_err_t, error type
+ *
+ *---------------------------------------------------------------
+ *
+ * The page remote.html is a form that submits back to /remote:
+ *
+ *  /remote                          - Show the current settings
+ *  /remote?url=..&key=..&kmode=..&active=1&save=SAVE
+ *                                   - Save the settings
+ *  /remote?test=1                   - POST a test shot and show
+ *                                     the server's reply status
+ *
+ * The checkbox "active" is only sent by the browser when it is
+ * ticked, so the "save" button is used to detect that the form
+ * has been submitted.
+ *
+ * The settings are the same ones used by the JSON interface
+ * (REMOTE_URL, REMOTE_KEY, REMOTE_KEY_MODE, REMOTE_ACTIVE) and
+ * are stored in persistent storage.  They are not changed if the
+ * target has been locked with {"LOCK":...}.
+ *
+ *------------------------------------------------------------*/
+static const char *remote_message = ""; // Feedback shown on the remote page (^S)
+
+static esp_err_t service_get_remote(httpd_req_t *req)
+{
+  static char query[EXTRA_LARGE_STRING]; // Query string from the URL
+  static char value[3 * URL_SIZE];       // One value from the query string (still URL encoded)
+  char        my_name[SHORT_TEXT];       // Target name
+  int         wait;                      // Time waiting for the test reply
+
+  DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "service_get_remote(%s)", req->uri);))
+
+  remote_message = "";
+  if ( httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK )
+  {
+    /*
+     *  SAVE pressed, update the settings
+     */
+    if ( httpd_query_key_value(query, "save", value, sizeof(value)) == ESP_OK )
+    {
+      if ( json_lock != 0 )               // Same rule as the JSON interface
+      {
+        remote_message = "Target is locked, settings not changed";
+      }
+      else
+      {
+        if ( httpd_query_key_value(query, "url", value, sizeof(value)) == ESP_OK )
+        {
+          url_decode(value);
+          strncpy(json_remote_url, value, URL_SIZE - 1);
+          json_remote_url[URL_SIZE - 1] = 0;
+        }
+
+        if ( httpd_query_key_value(query, "key", value, sizeof(value)) == ESP_OK )
+        {
+          url_decode(value);
+          strncpy(json_remote_key, value, KEY_SIZE - 1); // Must fit when read back by read_nonvol()
+          json_remote_key[KEY_SIZE - 1] = 0;
+        }
+
+        json_remote_key_mode = REMOTE_KEY_IN_BODY;
+        if ( httpd_query_key_value(query, "kmode", value, sizeof(value)) == ESP_OK )
+        {
+          json_remote_key_mode = (atoi(value) == REMOTE_KEY_IN_HEADER) ? REMOTE_KEY_IN_HEADER : REMOTE_KEY_IN_BODY;
+        }
+
+        json_remote_active = (httpd_query_key_value(query, "active", value, sizeof(value)) == ESP_OK) ? 1 : 0;
+
+        nonvol_write_str(NONVOL_REMOTE_URL, json_remote_url);
+        nonvol_write_str(NONVOL_REMOTE_KEY, json_remote_key);
+        nonvol_write_i32(NONVOL_REMOTE_KEY_MODE, &json_remote_key_mode);
+        nonvol_write_i32(NONVOL_REMOTE_ACTIVE, &json_remote_active);
+        remote_message = "Settings saved";
+        DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "Remote server: %s active: %d key mode: %d", json_remote_url, json_remote_active,
+                                            json_remote_key_mode);))
+      }
+    }
+
+    /*
+     *  TEST pressed, send a test shot and wait for the reply
+     */
+    else if ( httpd_query_key_value(query, "test", value, sizeof(value)) == ESP_OK )
+    {
+      if ( (json_remote_active == 0) || (json_remote_url[0] == 0) )
+      {
+        remote_message = "Enable the server and enter a URL before testing";
+      }
+      else
+      {
+        http_post_last_status = 0;
+        http_post_shot("{\"shot\":0, \"test\":1}");
+        wait = 0;
+        while ( (http_post_last_status == 0) && (wait < (HTTP_POST_TIMEOUT_MS / 1000) + 2) )
+        {
+          vTaskDelay(ONE_SECOND);
+          wait++;
+        }
+        remote_message = "Test shot sent";
+      }
+    }
+  }
+
+  /*
+   *  Send the page back with the current settings filled in
+   */
+  target_name(my_name);
+  httpd_resp_set_hdr(req, "get_remote", my_name);
+  http_printf((const char *)&remote_html_start, req, SIZEOF_remote_HTML);
 
   return ESP_OK;
 }
@@ -749,6 +926,62 @@ static void http_printf(const char  *format, // Format string
           {
             SELECTED
           }
+          break;
+
+        /*
+         *  Remote REST server settings (remote.html)
+         */
+        case 'U':                     // Remote server URL
+          strcat(_xs, json_remote_url);
+          i = strlen(_xs);
+          break;
+
+        case 'K':                     // Remote server access key
+          strcat(_xs, json_remote_key);
+          i = strlen(_xs);
+          break;
+
+        case '0':                     // Key sent in the JSON body
+          if ( json_remote_key_mode == REMOTE_KEY_IN_BODY )
+          {
+            SELECTED
+          }
+          break;
+
+        case '1':                     // Key sent in the X-API-KEY header
+          if ( json_remote_key_mode == REMOTE_KEY_IN_HEADER )
+          {
+            SELECTED
+          }
+          break;
+
+        case 'R':                     // Remote server enabled
+          if ( json_remote_active != 0 )
+          {
+            strcat(_xs, " checked ");
+            i = strlen(_xs);
+          }
+          break;
+
+        case 'S':                     // Last status from the remote server
+          if ( http_post_last_status == 0 )
+          {
+            strcat(_xs, "Nothing sent yet");
+          }
+          else if ( http_post_last_status < 0 )
+          {
+            strcat(_xs, "Connection failed");
+          }
+          else
+          {
+            sprintf(&_xs[strlen(_xs)], "HTTP %d", http_post_last_status);
+          }
+          if ( remote_message[0] != 0 )
+          {
+            strcat(_xs, " - ");
+            strcat(_xs, remote_message);
+          }
+          i = strlen(_xs);
           break;
 
         default:                      // Unknown format

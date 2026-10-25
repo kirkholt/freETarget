@@ -29,4 +29,8 @@ extern const unsigned char menu_html_start[] asm("_binary_menu_html_start");
 extern const unsigned char menu_html_end[] asm("_binary_menu_html_end");
 #define SIZEOF_menu_HTML (menu_html_end - menu_html_start)
 
+extern const unsigned char remote_html_start[] asm("_binary_remote_html_start");
+extern const unsigned char remote_html_end[] asm("_binary_remote_html_end");
+#define SIZEOF_remote_HTML (remote_html_end - remote_html_start)
+
 #endif

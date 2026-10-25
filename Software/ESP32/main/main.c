@@ -103,6 +103,10 @@ void app_main(void)
   serial_flush(ALL);
   vTaskDelay(TICK_10ms);
 
+  http_post_init();                   // Task that POSTs shots to the remote REST server
+  serial_flush(ALL);
+  vTaskDelay(TICK_10ms);
+
   freeETarget_timer_init();
   vTaskDelay(TICK_10ms);
   serial_flush(ALL);
