@@ -491,6 +491,21 @@ void WiFi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id
     {
       ipInfo.ip = event->ip_info.ip;
       DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "Received IP: " IPSTR, IP2STR(&event->ip_info.ip));))
+
+      /*
+       *  Log the rest of the DHCP lease so that routing problems
+       *  (wrong gateway or DNS server) can be diagnosed
+       */
+      esp_netif_dns_info_t dns_main;   // Primary DNS server
+      esp_netif_dns_info_t dns_backup; // Secondary DNS server
+      memset(&dns_main, 0, sizeof(dns_main));
+      memset(&dns_backup, 0, sizeof(dns_backup));
+      esp_netif_get_dns_info(event->esp_netif, ESP_NETIF_DNS_MAIN, &dns_main);
+      esp_netif_get_dns_info(event->esp_netif, ESP_NETIF_DNS_BACKUP, &dns_backup);
+      DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "Netmask: " IPSTR "  Gateway: " IPSTR, IP2STR(&event->ip_info.netmask),
+                                          IP2STR(&event->ip_info.gw));))
+      DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "DNS: " IPSTR "  Backup DNS: " IPSTR, IP2STR(&dns_main.ip.u_addr.ip4),
+                                          IP2STR(&dns_backup.ip.u_addr.ip4));))
       s_retry_num = 0;
       xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }

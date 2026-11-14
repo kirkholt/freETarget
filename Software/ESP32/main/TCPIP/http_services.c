@@ -27,6 +27,7 @@
 #include "esp_tls.h"
 #include <esp_wifi.h>
 #include "esp_ota_ops.h"
+#include "esp_random.h"
 
 #include "freETarget.h"
 #include "compute_hit.h"
@@ -39,6 +40,7 @@
 #include "nvs.h"
 #include "nonvol.h"
 #include "http_client.h"
+#include "timer.h"
 
 #include "html.h"
 
@@ -488,6 +490,7 @@ static esp_err_t service_get_remote(httpd_req_t *req)
   static char value[3 * URL_SIZE];       // One value from the query string (still URL encoded)
   char        my_name[SHORT_TEXT];       // Target name
   int         wait;                      // Time waiting for the test reply
+  shot_record_t test_shot;               // Fake shot sent by the TEST button
 
   DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "service_get_remote(%s)", req->uri);))
 
@@ -548,8 +551,21 @@ static esp_err_t service_get_remote(httpd_req_t *req)
       }
       else
       {
+        /*
+         *  Build the test shot exactly like a real one (same fields and
+         *  format) so that the server's validation is tested as well.
+         *  The shot lands at a random spot within 5 mm of the centre.
+         */
+        memset(&test_shot, 0, sizeof(test_shot));
+        test_shot.shot         = 0;                                           // Sent as "shot":1
+        test_shot.session_type = SESSION_VALID | json_session_type;
+        test_shot.shot_time    = run_time_ms();
+        test_shot.x_mm         = ((double)(esp_random() % 1001) - 500.0) / 100.0;
+        test_shot.y_mm         = ((double)(esp_random() % 1001) - 500.0) / 100.0;
+        build_json_score(&test_shot, SCORE_TCPIP);
+
         http_post_last_status = 0;
-        http_post_shot("{\"shot\":0, \"test\":1}");
+        http_post_shot(_xs);
         wait = 0;
         while ( (http_post_last_status == 0) && (wait < (HTTP_POST_TIMEOUT_MS / 1000) + 2) )
         {

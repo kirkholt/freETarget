@@ -81,7 +81,15 @@ httpd_handle_t start_webserver(unsigned int port // Port to use for the web serv
   httpd_handle_t      server       = NULL;
   httpd_config_t      config       = HTTPD_DEFAULT_CONFIG();
 
+  /*
+   *  Two servers are started (port 80 and port 8080).  Each ESP-IDF
+   *  web server also opens an internal UDP control socket, which by
+   *  default is always ESP_HTTPD_DEF_CTRL_PORT (32768).  The second
+   *  server would then fail with EADDRINUSE ("error in creating ctrl
+   *  socket (112)"), so every server is given its own control port.
+   */
   config.server_port      = port;
+  config.ctrl_port        = ESP_HTTPD_DEF_CTRL_PORT + server_count; // 32768 for the first server, 32769 for the next
   config.lru_purge_enable = true;
 
   DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "start_webserver(port: %d)", config.server_port);))

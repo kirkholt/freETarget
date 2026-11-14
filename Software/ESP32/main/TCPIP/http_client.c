@@ -570,6 +570,49 @@ static void http_post_task(void *parameters);      // Task that empties the queu
 
 /*----------------------------------------------------------------
  *
+ * @function: http_post_trim
+ *
+ * @brief:    Remove leading and trailing white space in place
+ *
+ * @return:   None
+ *
+ *---------------------------------------------------------------
+ *
+ * A URL or key copied from another program often carries a
+ * leading or trailing space.  esp_http_client cannot parse a URL
+ * that starts with a space, so the transfer fails before any
+ * network traffic is sent.
+ *
+ *------------------------------------------------------------*/
+static void http_post_trim(char *s) // String to trim
+{
+  char  *start;                     // First non blank character
+  size_t length;                    // Length after removing the leading blanks
+
+  start = s;
+  while ( (*start == ' ') || (*start == '\t') || (*start == '\r') || (*start == '\n') )
+  {
+    start++;
+  }
+
+  length = strlen(start);
+  while ( (length > 0)
+          && ((start[length - 1] == ' ') || (start[length - 1] == '\t') || (start[length - 1] == '\r') || (start[length - 1] == '\n')) )
+  {
+    length--;
+  }
+
+  memmove(s, start, length);
+  s[length] = 0;
+
+  /*
+   *  All done, return
+   */
+  return;
+}
+
+/*----------------------------------------------------------------
+ *
  * @function: http_post_init
  *
  * @brief:    Create the queue and the task used to POST shots
@@ -729,8 +772,10 @@ static void http_post_task(void *parameters)
      */
     strncpy(url, json_remote_url, sizeof(url) - 1);
     url[sizeof(url) - 1] = 0;
+    http_post_trim(url);                                    // A pasted " http://..." is rejected by the client
     strncpy(key, json_remote_key, sizeof(key) - 1);
     key[sizeof(key) - 1] = 0;
+    http_post_trim(key);
 
     strncpy(payload, shot, sizeof(payload) - 1);
     payload[sizeof(payload) - 1] = 0;
