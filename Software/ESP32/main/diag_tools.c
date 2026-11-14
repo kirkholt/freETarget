@@ -1154,6 +1154,57 @@ static void test_rapidfire(void)
 
 /*----------------------------------------------------------------
  *
+ * @function: build_test_shot
+ *
+ * @brief:    Fill in a shot record with a fake shot
+ *
+ * @return:   None
+ *
+ *----------------------------------------------------------------
+ *
+ * Used by every source of test shots (the PC TEST action on the
+ * multifunction switches, the "build_json_score" diagnostic and
+ * the TEST button on the /remote web page) so that they all look
+ * exactly like a real shot when passed to build_json_score().
+ *
+ * The shot number comes from one counter shared by all sources,
+ * so no two test shots get the same number.  It starts again at
+ * 1 when the target is restarted (build_json_score() adds 1).
+ *
+ * The shot lands at a random angle and a random distance between
+ * 0 and TEST_SHOT_RADIUS mm from the centre, spread evenly over
+ * the area of the circle.
+ *
+ * Picking the radius uniformly would crowd the shots near the
+ * centre, because a ring of width dr at radius r has an area
+ * proportional to r.  Taking the square root of a uniform random
+ * number u in [0, 1] compensates for this:
+ *
+ *    r = TEST_SHOT_RADIUS * sqrt(u)
+ *
+ *--------------------------------------------------------------*/
+#define TEST_SHOT_RADIUS 25.0                    // Largest distance of a test shot from the centre (mm)
+static unsigned int test_shot_count = 0;         // Number of test shots sent since power up
+
+void build_test_shot(shot_record_t *shot)        // Record to fill in
+{
+  memset(shot, 0, sizeof(shot_record_t));
+  shot->shot         = test_shot_count++;        // Sent as shot + 1
+  shot->session_type = SESSION_VALID | json_session_type;
+  shot->shot_time    = run_time_ms();
+  shot->radius       = sqrt((double)esp_random() / (double)UINT32_MAX) * TEST_SHOT_RADIUS; // 0 to TEST_SHOT_RADIUS mm, even over the area
+  shot->angle        = ((double)esp_random() / (double)UINT32_MAX) * 2.0 * M_PI;           // 0 to 2 pi radians
+  shot->x_mm         = shot->radius * cos(shot->angle);
+  shot->y_mm         = shot->radius * sin(shot->angle);
+
+  /*
+   *  All done, return
+   */
+  return;
+}
+
+/*----------------------------------------------------------------
+ *
  * @function: mfs_test_build_json_score
  *
  * @brief:    Build a fake score message and send it
@@ -1163,29 +1214,45 @@ static void test_rapidfire(void)
  *----------------------------------------------------------------
  *
  * This self test sends a score message to the PC or network
- * to simulate a shot.
+ * to simulate a shot.  It is run by the PC TEST action of the
+ * multifunction switches (e.g. {"MFS_TAP_2":4}) and from the
+ * diagnostic menu.
+ *
+ * The TCP/IP version of the score is also POSTed to the remote
+ * REST server.  http_post_shot() does nothing if the server is
+ * not enabled (REMOTE_ACTIVE) or has no URL (REMOTE_URL).
+ *
+ * The fake shot is kept in a local record so that the shots
+ * already recorded in record[] are not overwritten.
  *
  *--------------------------------------------------------------*/
-#define TARGET_RADIUS 25.0
 void mfs_test_build_json_score(void)
 {
-  char       str[LARGE_STRING];
-  static int test_shot = 0;
+  static char   str[EXTRA_LARGE_STRING];         // Copy of the score (static to keep it off the task stack)
+  shot_record_t test_shot;                       // Fake shot being sent
 
-  record[0].shot = test_shot++;
-  record[0].x_mm = ((real_t)(esp_random() % 2000) - 1000) / 1000.0 * TARGET_RADIUS; // Pick a random location
-  record[0].y_mm = ((real_t)(esp_random() % 2000) - 1000) / 1000.0 * TARGET_RADIUS;
+  /*
+   *  The score is copied out of _xs because _xs is reused by SEND().
+   *  A score with the athlete, event and target names is longer than
+   *  LARGE_STRING (128), so a large buffer is used and the copy is
+   *  always terminated; otherwise a truncated, unterminated score is
+   *  sent and the REST server rejects it with HTTP 400.
+   */
+  str[sizeof(str) - 1] = 0;
 
-  build_json_score(&record[0], SCORE_USB);
-  strncpy(str, _xs, sizeof(str));
+  build_test_shot(&test_shot);
+
+  build_json_score(&test_shot, SCORE_USB);
+  strncpy(str, _xs, sizeof(str) - 1);
   SEND(CONSOLE, sprintf(_xs, "\r\nUSB:       %s", str);)
 
-  build_json_score(&record[0], SCORE_TCPIP);
-  strncpy(str, _xs, sizeof(str));
+  build_json_score(&test_shot, SCORE_TCPIP);
+  strncpy(str, _xs, sizeof(str) - 1);
+  http_post_shot(str);                           // Queue it for the REST server as well
   SEND(TCPIP, sprintf(_xs, "\r\nTCPIP:     %s", str);)
 
-  build_json_score(&record[0], SCORE_BLUETOOTH);
-  strncpy(str, _xs, sizeof(str));
+  build_json_score(&test_shot, SCORE_BLUETOOTH);
+  strncpy(str, _xs, sizeof(str) - 1);
   SEND(AUX | BLUETOOTH | RS485, sprintf(_xs, "\r\nAUX: %s", str);)
 
   SEND(ALL, sprintf(_xs, _DONE_);)

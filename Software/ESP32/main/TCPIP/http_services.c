@@ -27,7 +27,6 @@
 #include "esp_tls.h"
 #include <esp_wifi.h>
 #include "esp_ota_ops.h"
-#include "esp_random.h"
 
 #include "freETarget.h"
 #include "compute_hit.h"
@@ -40,7 +39,6 @@
 #include "nvs.h"
 #include "nonvol.h"
 #include "http_client.h"
-#include "timer.h"
 
 #include "html.h"
 
@@ -554,14 +552,10 @@ static esp_err_t service_get_remote(httpd_req_t *req)
         /*
          *  Build the test shot exactly like a real one (same fields and
          *  format) so that the server's validation is tested as well.
-         *  The shot lands at a random spot within 5 mm of the centre.
+         *  build_test_shot() (diag_tools.c) is shared with the PC TEST
+         *  switch action, so the shot number counts up across both.
          */
-        memset(&test_shot, 0, sizeof(test_shot));
-        test_shot.shot         = 0;                                           // Sent as "shot":1
-        test_shot.session_type = SESSION_VALID | json_session_type;
-        test_shot.shot_time    = run_time_ms();
-        test_shot.x_mm         = ((double)(esp_random() % 1001) - 500.0) / 100.0;
-        test_shot.y_mm         = ((double)(esp_random() % 1001) - 500.0) / 100.0;
+        build_test_shot(&test_shot);
         build_json_score(&test_shot, SCORE_TCPIP);
 
         http_post_last_status = 0;
