@@ -6,16 +6,22 @@
   Configure the REST server that every shot is POSTed to.
 
   This page is sent through http_printf() in http_services.c, which
-  replaces the following fields with the current settings:
+  replaces a caret followed by one of these letters with the current
+  settings:
 
-    ^U  REMOTE_URL
-    ^K  REMOTE_KEY
-    ^0  "selected" if the key is sent as "apikey" in the JSON body
-    ^1  "selected" if the key is sent as an X-API-KEY header
-    ^R  "checked" if REMOTE_ACTIVE is set
-    ^S  Last HTTP status returned by the server
+    U  REMOTE_URL
+    K  REMOTE_KEY
+    0  "selected" if the key is sent as "apikey" in the JSON body
+    1  "selected" if the key is sent as an X-API-KEY header
+    R  "checked" if REMOTE_ACTIVE is set
+    S  Last HTTP status returned by the server
 
-  Do not use the caret character anywhere else in this file.
+  The fields are listed without the caret on purpose.  http_printf()
+  also replaces fields inside HTML comments, so writing them here with
+  the caret put the URL and the access key into the page source.
+
+  Do not use the caret character anywhere else in this file, not even
+  in comments.
 -->
 
 <head>
